@@ -8,7 +8,7 @@ import (
 
 type AdaptorService interface {
 	WithOpenAI(model string)
-	SetFunction(name string, description string, params interface{})
+	SetFunction(name string, description string, params utils.FunctionShape, fn func(param string) string)
 	Completion(prompt string, prompts *[]utils.AgentPrompts) string
 }
 
@@ -43,17 +43,15 @@ func (a *Adaptor) Completion(prompt string, prompts *[]utils.AgentPrompts) strin
 	}
 }
 
-func (a *Adaptor) SetFunction(name string, description string, params interface{}) {
+func (a *Adaptor) SetFunction(name string, description string, params utils.FunctionShape, fn func(param string) string) {
 	if a.provider == "" {
 		panic("no provider selected")
 	}
 
-	requiredFields := utils.GetRequiredFields(params)
-
 	switch provider := a.provider; provider {
 	case "openai":
-		p := a.Service.(OpenAIService).CreateFuncParams(params, requiredFields)
-		a.Service.(OpenAIService).AddFunction(name, description, p)
+		jsonschema := utils.GenerateSchema(params)
+		a.Service.(OpenAIService).AddFunction(name, description, jsonschema, fn)
 	default:
 		fmt.Printf("provider does not exist")
 	}

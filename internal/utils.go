@@ -1,6 +1,8 @@
 package utils
 
-import "reflect"
+import (
+	"github.com/sashabaranov/go-openai/jsonschema"
+)
 
 type AgentPrompts struct {
 	Role      string
@@ -8,25 +10,33 @@ type AgentPrompts struct {
 	Backstory string
 }
 
-func GetRequiredFields(v interface{}) []string {
-	var requiredFields []string
+type FunctionProps struct {
+	Description string
+	Required    bool
+}
 
-	// Get the reflect Type and Value of the input struct
-	t := reflect.TypeOf(v)
+type FunctionShape map[string]FunctionProps
 
-	// Iterate over the struct fields
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		requiredTag := field.Tag.Get("required")
+func GenerateSchema(shape FunctionShape) jsonschema.Definition {
+	properties := make(map[string]jsonschema.Definition)
+	var required []string
 
-		// Check if the field has the required:"true" tag
-		if requiredTag == "true" {
-			jsonTag := field.Tag.Get("json")
+	// Populate the properties with the provided definitions
+	for fieldName, props := range shape {
+		properties[fieldName] = jsonschema.Definition{
+			Type:        jsonschema.String,
+			Description: props.Description,
+		}
 
-			// Append the json tag value to the requiredFields slice
-			requiredFields = append(requiredFields, jsonTag)
+		if props.Required {
+			required = append(required, fieldName)
 		}
 	}
 
-	return requiredFields
+	// Construct and return the schema definition
+	return jsonschema.Definition{
+		Type:       jsonschema.Object,
+		Properties: properties,
+		Required:   required,
+	}
 }

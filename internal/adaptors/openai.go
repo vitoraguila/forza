@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/sashabaranov/go-openai"
+	"github.com/sashabaranov/go-openai/jsonschema"
 	utils "github.com/vitoraguila/forza/internal"
 )
 
@@ -17,20 +18,35 @@ type OpenAIParams struct {
 
 type OpenAIService interface {
 	WithModel(model string)
-	AddFunction(name string, description string, params *OpenAIParams)
-	CreateFuncParams(params interface{}, required []string) *OpenAIParams
+	AddFunction(name string, description string, params jsonschema.Definition, fn func(param string) string)
 	Completion(prompt string, prompts *[]utils.AgentPrompts) string
 }
+
 type OpenAI struct {
-	model     string
-	Functions []openai.FunctionDefinition
+	model        string
+	Functions    []openai.FunctionDefinition
+	FnExecutable *map[string]func(param string) string
 }
 
 func NewOpenAI() OpenAIService {
-	return &OpenAI{}
+	var fnExecutable = make(map[string]func(param string) string)
+	return &OpenAI{
+		FnExecutable: &fnExecutable,
+	}
 }
 
 func (oai *OpenAI) Completion(prompt string, prompts *[]utils.AgentPrompts) string {
+	var fn []openai.Tool
+	if len(oai.Functions) > 0 {
+		for _, f := range oai.Functions {
+			t := openai.Tool{
+				Type:     openai.ToolTypeFunction,
+				Function: &f,
+			}
+			fn = append(fn, t)
+		}
+	}
+
 	var messages []openai.ChatCompletionMessage
 	for _, p := range *prompts {
 		messages = append(messages, openai.ChatCompletionMessage{
@@ -46,17 +62,49 @@ func (oai *OpenAI) Completion(prompt string, prompts *[]utils.AgentPrompts) stri
 	messages = append(messages, user)
 
 	client := openai.NewClient(os.Getenv("OPENAI_API_KEY"))
+	openaiReq := openai.ChatCompletionRequest{
+		Model:    openai.GPT3Dot5Turbo,
+		Messages: messages,
+	}
+
+	if len(fn) > 0 {
+		openaiReq.Tools = fn
+	}
+	ctx := context.Background()
 	resp, err := client.CreateChatCompletion(
-		context.Background(),
-		openai.ChatCompletionRequest{
-			Model:    openai.GPT3Dot5Turbo,
-			Messages: messages,
-		},
+		ctx,
+		openaiReq,
 	)
 	if err != nil {
 		fmt.Printf("Completion error: %v\n", err)
 		return ""
 	}
+
+	msg := resp.Choices[0].Message
+
+	if len(msg.ToolCalls) > 0 {
+		messages = append(messages, msg)
+		fmt.Printf("OpenAI called us back wanting to invoke our function '%v' with params '%v'\n",
+			msg.ToolCalls[0].Function.Name, msg.ToolCalls[0].Function.Arguments)
+
+		fn := (*oai.FnExecutable)[msg.ToolCalls[0].Function.Name]
+
+		messages = append(messages, openai.ChatCompletionMessage{
+			Role:       openai.ChatMessageRoleTool,
+			Content:    fn(msg.ToolCalls[0].Function.Arguments),
+			Name:       msg.ToolCalls[0].Function.Name,
+			ToolCallID: msg.ToolCalls[0].ID,
+		})
+
+		openaiReq.Messages = messages
+
+		resp, err = client.CreateChatCompletion(ctx, openaiReq)
+		if err != nil || len(resp.Choices) != 1 {
+			fmt.Printf("2nd completion error: err:%v len(choices):%v\n", err,
+				len(resp.Choices))
+		}
+	}
+
 	return resp.Choices[0].Message.Content
 }
 
@@ -64,18 +112,13 @@ func (oai *OpenAI) WithModel(model string) {
 	oai.model = model
 }
 
-func (oai *OpenAI) AddFunction(name string, description string, params *OpenAIParams) {
+func (oai *OpenAI) AddFunction(name string, description string, params jsonschema.Definition, fn func(param string) string) {
 	oai.Functions = append(oai.Functions, openai.FunctionDefinition{
 		Name:        name,
 		Description: description,
-		Parameters:  *params,
+		Parameters:  params,
 	})
-}
 
-func (oai *OpenAI) CreateFuncParams(params interface{}, required []string) *OpenAIParams {
-	return &OpenAIParams{
-		Type:       "object",
-		Properties: params,
-		Required:   required,
-	}
+	// store the function in a map
+	(*oai.FnExecutable)[name] = fn
 }
