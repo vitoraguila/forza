@@ -1,9 +1,9 @@
 package forza
 
 import (
+	"fmt"
 	"sync"
-
-	utils "github.com/vitoraguila/forza/internal"
+	"time"
 )
 
 type Forza struct {
@@ -12,27 +12,12 @@ type Forza struct {
 
 type TaskFn func() string
 
-type ForzaService interface {
-	RunConcurrently() []string
-	AddTask(fn TaskFn)
-}
-
-const (
-	AgentRoleSystem = "system"
-	AgentRoleUser   = "user"
-)
-
-const (
-	ProviderOpenAi = utils.ProviderOpenAi
-	ProviderAzure  = utils.ProviderAzure
-)
-
-func NewPipeline() ForzaService {
+func NewPipeline() *Forza {
 	return &Forza{}
 }
 
-func (f *Forza) AddTask(fn TaskFn) {
-	f.tasks = append(f.tasks, fn)
+func (f *Forza) AddTasks(fn ...TaskFn) {
+	f.tasks = append(f.tasks, fn...)
 }
 
 func (f *Forza) RunConcurrently() []string {
@@ -48,8 +33,15 @@ func (f *Forza) RunConcurrently() []string {
 		wg.Add(1)
 		go func(index int, task TaskFn) {
 			defer wg.Done()
+			startTime := time.Now()
+			fmt.Printf("Task %d started at %s\n", index+1, startTime.Format("15:04:05.000"))
+
 			// Execute the task and send the result to the channel
 			result := task()
+
+			endTime := time.Now()
+			fmt.Printf("Task %d finished at %s (Duration: %s)\n", index+1, endTime.Format("15:04:05.000"), endTime.Sub(startTime))
+
 			resultsChan <- struct {
 				index  int
 				result string
@@ -61,6 +53,7 @@ func (f *Forza) RunConcurrently() []string {
 	go func() {
 		wg.Wait()
 		close(resultsChan)
+
 	}()
 
 	// Collect the results from the channel

@@ -1,4 +1,4 @@
-package utils
+package forza
 
 import (
 	"fmt"
@@ -7,9 +7,8 @@ import (
 )
 
 type AgentPrompts struct {
-	Role      string
-	Goal      string
-	Backstory string
+	Role    string
+	Context string
 }
 
 type FunctionProps struct {
@@ -20,6 +19,11 @@ type FunctionProps struct {
 const (
 	ProviderOpenAi = "openai"
 	ProviderAzure  = "openai-azure"
+)
+
+const (
+	AgentRoleSystem = "system"
+	AgentRoleUser   = "user"
 )
 
 var ListProviders = []string{

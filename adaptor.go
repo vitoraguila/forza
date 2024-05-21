@@ -1,15 +1,11 @@
-package adaptors
+package forza
 
-import (
-	"fmt"
-
-	utils "github.com/vitoraguila/forza/internal"
-)
+import "fmt"
 
 type AdaptorService interface {
 	Configure(provider string, model string)
-	SetFunction(name string, description string, params utils.FunctionShape, fn func(param string) string)
-	Completion(prompt string, prompts *[]utils.AgentPrompts) string
+	SetFunction(name string, description string, params FunctionShape, fn func(param string) string)
+	Completion(prompt string, prompts *[]AgentPrompts) string
 }
 
 type AdaptorFuncParams struct {
@@ -30,7 +26,7 @@ func NewAdaptor() AdaptorService {
 
 func (a *Adaptor) Configure(provider string, model string) {
 	switch provider {
-	case utils.ProviderOpenAi, utils.ProviderAzure:
+	case ProviderOpenAi, ProviderAzure:
 		a.provider = provider
 		a.model = model
 		a.Service = NewOpenAI()
@@ -40,13 +36,13 @@ func (a *Adaptor) Configure(provider string, model string) {
 	}
 }
 
-func (a *Adaptor) Completion(prompt string, prompts *[]utils.AgentPrompts) string {
+func (a *Adaptor) Completion(prompt string, prompts *[]AgentPrompts) string {
 	if a.provider == "" && a.Service == nil && a.model == "" {
 		panic("Please configure the adaptor first")
 	}
 
 	switch provider := a.provider; provider {
-	case utils.ProviderOpenAi:
+	case ProviderOpenAi:
 		return a.Service.(OpenAIService).Completion(prompt, prompts)
 	default:
 		fmt.Printf("provider does not exist")
@@ -54,14 +50,14 @@ func (a *Adaptor) Completion(prompt string, prompts *[]utils.AgentPrompts) strin
 	}
 }
 
-func (a *Adaptor) SetFunction(name string, description string, params utils.FunctionShape, fn func(param string) string) {
+func (a *Adaptor) SetFunction(name string, description string, params FunctionShape, fn func(param string) string) {
 	if a.provider == "" {
 		panic("no provider selected")
 	}
 
 	switch provider := a.provider; provider {
-	case utils.ProviderOpenAi:
-		jsonschema := utils.GenerateSchema(params)
+	case ProviderOpenAi:
+		jsonschema := GenerateSchema(params)
 		a.Service.(OpenAIService).AddFunction(name, description, jsonschema, fn)
 	default:
 		fmt.Printf("provider does not exist")

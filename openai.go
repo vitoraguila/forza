@@ -1,4 +1,4 @@
-package adaptors
+package forza
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 
 	"github.com/sashabaranov/go-openai"
 	"github.com/sashabaranov/go-openai/jsonschema"
-	utils "github.com/vitoraguila/forza/internal"
 )
 
 type OpenAIParams struct {
@@ -19,7 +18,7 @@ type OpenAIParams struct {
 type OpenAIService interface {
 	WithModel(model string)
 	AddFunction(name string, description string, params jsonschema.Definition, fn func(param string) string)
-	Completion(prompt string, prompts *[]utils.AgentPrompts) string
+	Completion(prompt string, prompts *[]AgentPrompts) string
 }
 
 type OpenAI struct {
@@ -35,7 +34,7 @@ func NewOpenAI() OpenAIService {
 	}
 }
 
-func (oai *OpenAI) Completion(prompt string, prompts *[]utils.AgentPrompts) string {
+func (oai *OpenAI) Completion(prompt string, prompts *[]AgentPrompts) string {
 	var fn []openai.Tool
 	if len(oai.Functions) > 0 {
 		for _, f := range oai.Functions {
@@ -51,7 +50,7 @@ func (oai *OpenAI) Completion(prompt string, prompts *[]utils.AgentPrompts) stri
 	for _, p := range *prompts {
 		messages = append(messages, openai.ChatCompletionMessage{
 			Role:    p.Role,
-			Content: p.Backstory,
+			Content: p.Context,
 		})
 	}
 
@@ -63,7 +62,7 @@ func (oai *OpenAI) Completion(prompt string, prompts *[]utils.AgentPrompts) stri
 
 	var client *openai.Client
 
-	if oai.model == utils.ProviderAzure {
+	if oai.model == ProviderAzure {
 		azureApiKey := os.Getenv("AZURE_OPEN_AI_API_KEY")
 		azureEndpoint := os.Getenv("AZURE_OPEN_AI_ENDPOINT")
 
@@ -105,8 +104,8 @@ func (oai *OpenAI) Completion(prompt string, prompts *[]utils.AgentPrompts) stri
 
 	if len(msg.ToolCalls) > 0 {
 		messages = append(messages, msg)
-		fmt.Printf("OpenAI called us back wanting to invoke our function '%v' with params '%v'\n",
-			msg.ToolCalls[0].Function.Name, msg.ToolCalls[0].Function.Arguments)
+		// fmt.Printf("OpenAI called us back wanting to invoke our function '%v' with params '%v'\n",
+		// 	msg.ToolCalls[0].Function.Name, msg.ToolCalls[0].Function.Arguments)
 
 		fn := (*oai.FnExecutable)[msg.ToolCalls[0].Function.Name]
 
