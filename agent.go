@@ -5,14 +5,14 @@ import (
 	"strings"
 )
 
-type Agent struct {
-	adaptor      AdaptorService
+type agent struct {
+	adaptor      adaptorService
 	IsConfigured bool
 	prompts      *[]AgentPrompts
 }
 
-func NewAgent(context string) *Agent {
-	adaptor := NewAdaptor()
+func NewAgent(context string) *agent {
+	adaptor := newAdaptor()
 	initialPrompt := &[]AgentPrompts{
 		{
 			Role:    AgentRoleSystem,
@@ -20,38 +20,38 @@ func NewAgent(context string) *Agent {
 		},
 	}
 
-	return &Agent{
+	return &agent{
 		adaptor:      adaptor,
 		prompts:      initialPrompt,
 		IsConfigured: false,
 	}
 }
 
-func (a *Agent) Configure(provider string, model string) {
-	if !CheckProvider(provider) {
+func (a *agent) Configure(provider string, model string) {
+	if !checkProvider(provider) {
 		panic(fmt.Sprintf("Provider %s does not exist. Providers available are: %s\n", provider, strings.Join(ListProviders, ", ")))
 	}
 
-	isModelExist, msg := CheckModel(provider, model)
+	isModelExist, msg := checkModel(provider, model)
 	if !isModelExist {
 		panic(msg)
 	}
 
-	a.adaptor.Configure(provider, model)
+	a.adaptor.configure(provider, model)
 	a.IsConfigured = true
 }
 
-func (a *Agent) AddExtraPrompt(context string, role string) {
+func (a *agent) AddExtraPrompt(context string, role string) {
 	*a.prompts = append(*a.prompts, AgentPrompts{
 		Role:    role,
 		Context: context,
 	})
 }
 
-func (a *Agent) WithContext(context string) {
+func (a *agent) WithContext(context string) {
 	(*a.prompts)[0].Context = context
 }
 
-func (a *Agent) WithRole(role string) {
+func (a *agent) WithRole(role string) {
 	(*a.prompts)[0].Role = role
 }

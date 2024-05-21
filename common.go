@@ -31,7 +31,7 @@ var ListProviders = []string{
 	ProviderAzure,
 }
 
-type Models interface {
+type models interface {
 	ListModels() []string
 }
 type openAIModels struct {
@@ -51,14 +51,14 @@ var OpenAIModels = openAIModels{
 }
 
 // Map of providers to their models
-var availableModels = map[string]Models{
+var availableModels = map[string]models{
 	ProviderOpenAi: OpenAIModels,
 	ProviderAzure:  OpenAIModels, // Assuming Azure has the same models
 }
 
 type FunctionShape map[string]FunctionProps
 
-func CheckModel(provider, modelName string) (bool, string) {
+func checkModel(provider, modelName string) (bool, string) {
 	models, exists := availableModels[provider]
 	if !exists {
 		return false, fmt.Sprintf("model %s does not exist. odels available for provider selected are: %s\n", modelName, models.ListModels())
@@ -71,7 +71,7 @@ func CheckModel(provider, modelName string) (bool, string) {
 	return false, fmt.Sprintf("model %s does not exist. odels available for provider selected are: %s\n", modelName, models.ListModels())
 }
 
-func CheckProvider(provider string) bool {
+func checkProvider(provider string) bool {
 	switch provider {
 	case ProviderOpenAi, ProviderAzure:
 		return true
@@ -80,7 +80,7 @@ func CheckProvider(provider string) bool {
 	}
 }
 
-func GenerateSchema(shape FunctionShape) jsonschema.Definition {
+func generateSchema(shape FunctionShape) jsonschema.Definition {
 	properties := make(map[string]jsonschema.Definition)
 	var required []string
 

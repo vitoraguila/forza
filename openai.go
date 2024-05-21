@@ -9,32 +9,26 @@ import (
 	"github.com/sashabaranov/go-openai/jsonschema"
 )
 
-type OpenAIParams struct {
-	Type       string      `json:"type"`
-	Properties interface{} `json:"properties"`
-	Required   []string    `json:"required"`
+type openAIService interface {
+	withModel(model string)
+	addFunction(name string, description string, params jsonschema.Definition, fn func(param string) string)
+	completion(prompt string, prompts *[]AgentPrompts) string
 }
 
-type OpenAIService interface {
-	WithModel(model string)
-	AddFunction(name string, description string, params jsonschema.Definition, fn func(param string) string)
-	Completion(prompt string, prompts *[]AgentPrompts) string
-}
-
-type OpenAI struct {
+type openAI struct {
 	model        string
 	Functions    []openai.FunctionDefinition
 	FnExecutable *map[string]func(param string) string
 }
 
-func NewOpenAI() OpenAIService {
+func newOpenAI() openAIService {
 	var fnExecutable = make(map[string]func(param string) string)
-	return &OpenAI{
+	return &openAI{
 		FnExecutable: &fnExecutable,
 	}
 }
 
-func (oai *OpenAI) Completion(prompt string, prompts *[]AgentPrompts) string {
+func (oai *openAI) completion(prompt string, prompts *[]AgentPrompts) string {
 	var fn []openai.Tool
 	if len(oai.Functions) > 0 {
 		for _, f := range oai.Functions {
@@ -128,11 +122,11 @@ func (oai *OpenAI) Completion(prompt string, prompts *[]AgentPrompts) string {
 	return resp.Choices[0].Message.Content
 }
 
-func (oai *OpenAI) WithModel(model string) {
+func (oai *openAI) withModel(model string) {
 	oai.model = model
 }
 
-func (oai *OpenAI) AddFunction(name string, description string, params jsonschema.Definition, fn func(param string) string) {
+func (oai *openAI) addFunction(name string, description string, params jsonschema.Definition, fn func(param string) string) {
 	oai.Functions = append(oai.Functions, openai.FunctionDefinition{
 		Name:        name,
 		Description: description,

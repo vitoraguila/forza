@@ -2,63 +2,56 @@ package forza
 
 import "fmt"
 
-type AdaptorService interface {
-	Configure(provider string, model string)
-	SetFunction(name string, description string, params FunctionShape, fn func(param string) string)
-	Completion(prompt string, prompts *[]AgentPrompts) string
+type adaptorService interface {
+	configure(provider string, model string)
+	setFunction(name string, description string, params FunctionShape, fn func(param string) string)
+	completion(prompt string, prompts *[]AgentPrompts) string
 }
-
-type AdaptorFuncParams struct {
-	Type       string      `json:"type"`
-	Properties interface{} `json:"properties"`
-	Required   []string    `json:"required"`
-}
-
-type Adaptor struct {
+type adaptor struct {
 	provider string
 	model    string
 	Service  interface{}
 }
 
-func NewAdaptor() AdaptorService {
-	return &Adaptor{}
+func newAdaptor() adaptorService {
+	return &adaptor{}
 }
 
-func (a *Adaptor) Configure(provider string, model string) {
+func (a *adaptor) configure(provider string, model string) {
 	switch provider {
 	case ProviderOpenAi, ProviderAzure:
 		a.provider = provider
 		a.model = model
-		a.Service = NewOpenAI()
-		a.Service.(OpenAIService).WithModel(model)
+		a.Service = newOpenAI()
+		a.Service.(openAIService).withModel(model)
 	default:
 		fmt.Printf("provider does not exist")
 	}
 }
 
-func (a *Adaptor) Completion(prompt string, prompts *[]AgentPrompts) string {
+func (a *adaptor) completion(prompt string, prompts *[]AgentPrompts) string {
 	if a.provider == "" && a.Service == nil && a.model == "" {
 		panic("Please configure the adaptor first")
 	}
 
 	switch provider := a.provider; provider {
 	case ProviderOpenAi:
-		return a.Service.(OpenAIService).Completion(prompt, prompts)
+		return a.Service.(openAIService).completion(prompt, prompts)
 	default:
 		fmt.Printf("provider does not exist")
 		return ""
 	}
 }
 
-func (a *Adaptor) SetFunction(name string, description string, params FunctionShape, fn func(param string) string) {
+func (a *adaptor) setFunction(name string, description string, params FunctionShape, fn func(param string) string) {
 	if a.provider == "" {
 		panic("no provider selected")
 	}
 
 	switch provider := a.provider; provider {
 	case ProviderOpenAi:
-		jsonschema := GenerateSchema(params)
-		a.Service.(OpenAIService).AddFunction(name, description, jsonschema, fn)
+		jsonschema := generateSchema(params)
+		a.Service.(openAIService).addFunction(name, description, jsonschema, fn)
 	default:
 		fmt.Printf("provider does not exist")
 	}

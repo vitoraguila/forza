@@ -1,35 +1,35 @@
 package forza
 
-type Task struct {
-	agent  *Agent
+type task struct {
+	agent  *agent
 	prompt string
 }
 
-func NewTask(agent *Agent) *Task {
-	return &Task{
+func NewTask(agent *agent) *task {
+	return &task{
 		agent: agent,
 	}
 }
 
-func (t *Task) SetPrompt(prompt string) {
+func (t *task) SetPrompt(prompt string) {
 	t.prompt = prompt
 }
 
-func (t *Task) checkAgentConfiguration() {
+func (t *task) checkAgentConfiguration() {
 	if !(t.agent.IsConfigured) {
 		panic("agent is not configured. Missing provider and model")
 	}
 }
 
-func (t *Task) Completion() string {
+func (t *task) Completion() string {
 	t.checkAgentConfiguration()
 	if t.prompt == "" {
 		panic("no prompt set")
 	}
 
-	return t.agent.adaptor.Completion(t.prompt, t.agent.prompts)
+	return t.agent.adaptor.completion(t.prompt, t.agent.prompts)
 }
 
-func (t *Task) SetFunction(name string, description string, params FunctionShape, fn func(param string) string) {
-	t.agent.adaptor.SetFunction(name, description, params, fn)
+func (t *task) SetFunction(name string, description string, params FunctionShape, fn func(param string) string) {
+	t.agent.adaptor.setFunction(name, description, params, fn)
 }

@@ -6,21 +6,21 @@ import (
 	"time"
 )
 
-type Forza struct {
-	tasks []TaskFn
+type forza struct {
+	tasks []taskFn
 }
 
-type TaskFn func() string
+type taskFn func() string
 
-func NewPipeline() *Forza {
-	return &Forza{}
+func NewPipeline() *forza {
+	return &forza{}
 }
 
-func (f *Forza) AddTasks(fn ...TaskFn) {
+func (f *forza) AddTasks(fn ...taskFn) {
 	f.tasks = append(f.tasks, fn...)
 }
 
-func (f *Forza) RunConcurrently() []string {
+func (f *forza) RunConcurrently() []string {
 	var wg sync.WaitGroup
 	results := make([]string, len(f.tasks))
 	resultsChan := make(chan struct {
@@ -31,7 +31,7 @@ func (f *Forza) RunConcurrently() []string {
 	// Launch each task in a separate goroutine
 	for i, task := range f.tasks {
 		wg.Add(1)
-		go func(index int, task TaskFn) {
+		go func(index int, task taskFn) {
 			defer wg.Done()
 			startTime := time.Now()
 			fmt.Printf("Task %d started at %s\n", index+1, startTime.Format("15:04:05.000"))
