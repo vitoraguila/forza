@@ -1,35 +1,48 @@
 package forza
 
 import (
+	"fmt"
+	"strings"
+
 	utils "github.com/vitoraguila/forza/internal"
 	"github.com/vitoraguila/forza/internal/adaptors"
 )
 
 type Agent struct {
-	adaptor adaptors.AdaptorService
-	prompts *[]utils.AgentPrompts
+	adaptor      adaptors.AdaptorService
+	IsConfigured bool
+	prompts      *[]utils.AgentPrompts
 }
 
-func NewAgent(provider string, backstory string, goal string, role string) *Agent {
+func NewAgent(backstory string, goal string) *Agent {
 	adaptor := adaptors.NewAdaptor()
 	initialPrompt := &[]utils.AgentPrompts{
 		{
-			Role:      role,
+			Role:      AgentRoleSystem,
 			Goal:      goal,
 			Backstory: backstory,
 		},
 	}
 
-	switch provider {
-	case "openai":
-		adaptor.WithOpenAI("gpt-35-turbo")
-		return &Agent{
-			adaptor: adaptor,
-			prompts: initialPrompt,
-		}
-	default:
-		panic("provider does not exist")
+	return &Agent{
+		adaptor:      adaptor,
+		prompts:      initialPrompt,
+		IsConfigured: false,
 	}
+}
+
+func (a *Agent) Configure(provider string, model string) {
+	if !utils.CheckProvider(provider) {
+		panic(fmt.Sprintf("Provider %s does not exist. Providers available are: %s\n", provider, strings.Join(utils.ListProviders, ", ")))
+	}
+
+	isModelExist, msg := utils.CheckModel(provider, model)
+	if !isModelExist {
+		panic(msg)
+	}
+
+	a.adaptor.Configure(provider, model)
+	a.IsConfigured = true
 }
 
 func (a *Agent) AddExtraPrompt(backstory string, goal string, role string) {

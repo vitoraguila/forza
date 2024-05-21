@@ -1,6 +1,10 @@
 package forza
 
-import "sync"
+import (
+	"sync"
+
+	utils "github.com/vitoraguila/forza/internal"
+)
 
 type Forza struct {
 	tasks []TaskFn
@@ -12,6 +16,16 @@ type ForzaService interface {
 	RunConcurrently() []string
 	AddTask(fn TaskFn)
 }
+
+const (
+	AgentRoleSystem = "system"
+	AgentRoleUser   = "user"
+)
+
+const (
+	ProviderOpenAi = utils.ProviderOpenAi
+	ProviderAzure  = utils.ProviderAzure
+)
 
 func NewForza() ForzaService {
 	return &Forza{}

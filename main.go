@@ -24,12 +24,14 @@ func getUserId(params string) string {
 
 func main() {
 	// FIRST EXAMPLE
-	ag1 := forza.NewAgent("openai", "you are a historian, give the perspective history", "", "system")
+	ag1 := forza.NewAgent("you are a historian, give the perspective history", "")
+	ag1.Configure(forza.ProviderOpenAi, utils.OpenAIModels.Gpt35turbo)
 	task1 := forza.NewTask(ag1)
 	task1.SetPrompt("who is barack obama?")
 
 	// SECOND EXAMPLE
-	ag2 := forza.NewAgent("openai", "you are a storyteller, write as a fairy tale for kids", "", "system")
+	ag2 := forza.NewAgent("you are a storyteller, write as a fairy tale for kids", "")
+	ag2.Configure(forza.ProviderOpenAi, utils.OpenAIModels.Gpt35turbo)
 	task2 := forza.NewTask(ag2)
 	task2.SetPrompt("who is Hercules?")
 
@@ -42,7 +44,8 @@ func main() {
 	}
 
 	// func3Params := &Properties{UserId: "user id description"}
-	ag3 := forza.NewAgent("openai", "You are a specialist to identify userId in the text", "", "system")
+	ag3 := forza.NewAgent("You are a specialist to identify userId in the text", "")
+	ag3.Configure(forza.ProviderOpenAi, utils.OpenAIModels.Gpt35turbo)
 	task3 := forza.NewTask(ag3)
 	task3.SetPrompt("My name is robert and my user id is 3434")
 	task3.SetFunction("get_user_id", "user will provide an userId, identify and get this userId", func3Params, getUserId)
