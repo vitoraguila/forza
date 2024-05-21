@@ -27,7 +27,7 @@ const (
 	ProviderAzure  = utils.ProviderAzure
 )
 
-func NewForza() ForzaService {
+func NewPipeline() ForzaService {
 	return &Forza{}
 }
 

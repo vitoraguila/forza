@@ -61,7 +61,28 @@ func (oai *OpenAI) Completion(prompt string, prompts *[]utils.AgentPrompts) stri
 	}
 	messages = append(messages, user)
 
-	client := openai.NewClient(os.Getenv("OPENAI_API_KEY"))
+	var client *openai.Client
+
+	if oai.model == utils.ProviderAzure {
+		azureApiKey := os.Getenv("AZURE_OPEN_AI_API_KEY")
+		azureEndpoint := os.Getenv("AZURE_OPEN_AI_ENDPOINT")
+
+		if azureApiKey == "" || azureEndpoint == "" {
+			panic("AZURE_OPEN_AI_API_KEY or AZURE_OPEN_AI_ENDPOINT not provided")
+		}
+
+		config := openai.DefaultAzureConfig(azureApiKey, azureEndpoint)
+		client = openai.NewClientWithConfig(config)
+	} else {
+		openAIApiKey := os.Getenv("OPENAI_API_KEY")
+
+		if openAIApiKey == "" {
+			panic("OPENAI_API_KEY Key not provided")
+		}
+
+		client = openai.NewClient(openAIApiKey)
+	}
+
 	openaiReq := openai.ChatCompletionRequest{
 		Model:    openai.GPT3Dot5Turbo,
 		Messages: messages,

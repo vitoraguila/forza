@@ -56,7 +56,7 @@ func main() {
 
 	// RUNNING ALL CONCURRENTLY
 
-	f := forza.NewForza()
+	f := forza.NewPipeline()
 	f.AddTask(task1.Completion)
 	f.AddTask(task2.Completion)
 	f.AddTask(task3.Completion)

@@ -30,7 +30,7 @@ func NewAdaptor() AdaptorService {
 
 func (a *Adaptor) Configure(provider string, model string) {
 	switch provider {
-	case utils.ProviderOpenAi:
+	case utils.ProviderOpenAi, utils.ProviderAzure:
 		a.provider = provider
 		a.model = model
 		a.Service = NewOpenAI()
