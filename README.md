@@ -160,3 +160,4 @@ func main() {
 - [ ] Add tests
 - [ ] Add support for Gemini
 - [ ] Add support for Llama
+- [ ] Implement chain of actions
