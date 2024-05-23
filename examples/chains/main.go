@@ -28,11 +28,7 @@ func main() {
 
 	// RUNNING ALL CONCURRENTLY
 	f := forza.NewPipeline()
+	chain := f.CreateChain(*task1.WithCompletion(), *task2.WithCompletion())
 
-	f.AddTasks(task1.Completion, task2.Completion)
-	result := f.RunConcurrently()
-
-	fmt.Println("result TASK1: ", result[0])
-	fmt.Println("-----------------")
-	fmt.Println("result TASK2: ", result[1])
+	fmt.Println("Chain result: ", chain())
 }

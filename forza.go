@@ -8,8 +8,8 @@ import (
 
 type forza struct {
 	tasks []taskFn
+	chain taskFn
 }
-
 type taskFn func() string
 
 func NewPipeline() *forza {
@@ -18,6 +18,26 @@ func NewPipeline() *forza {
 
 func (f *forza) AddTasks(fn ...taskFn) {
 	f.tasks = append(f.tasks, fn...)
+}
+
+func (f *forza) CreateChain(tasks ...task) taskFn {
+	return func() string {
+		var result string
+		for i, task := range tasks {
+			if task.chainAction == nil {
+				panic("There is no action pre set for the task.")
+			}
+			fmt.Printf("Task %d of %d chains\n", i+1, len(tasks))
+
+			output := task.chainAction()
+			if (i + 1) < len(tasks) {
+				tasks[i+1].setChainOutput(output)
+			} else {
+				result = output
+			}
+		}
+		return result
+	}
 }
 
 func (f *forza) RunConcurrently() []string {

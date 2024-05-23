@@ -35,14 +35,17 @@ import (
 )
 
 func main() {
-	agentStoryTeller := forza.NewAgent("you are a storyteller, write as a fairy tale for kids")
+	agentStoryTeller := forza.NewAgent(&forza.AgentPersona{
+		Role:      "storyteller",
+		Backstory: "you are a storyteller, write as a fairy tale for kids",
+		Goal:      "write a fairy tale",
+	})
 	agentStoryTeller.Configure(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
-
 	task := forza.NewTask(agentStoryTeller)
-	task.SetPrompt("who is Hercules?")
+	task.Instruction("who is Hercules?")
 
 	result := task.Completion()
-	fmt.Println(result, "result TASK")
+	fmt.Println("result TASK: ", result)
 }
 
 ```
@@ -73,36 +76,36 @@ import (
 )
 
 func main() {
-	marketAnalystAgent := forza.NewAgent("As the Lead Market Analyst at a premier " +
-		"digital marketing firm, you specialize in dissecting " +
-		"online business landscapes. Conduct amazing analysis of the products and " +
-		"competitors, providing in-depth insights to guide " +
-		"marketing strategies.")
-
+	marketAnalystAgent := forza.NewAgent(&forza.AgentPersona{
+		Role:      "Lead Market Analyst at a premier digital marketing firm",
+		Backstory: "you specialize in dissecting online business landscapes. Conduct amazing analysis of the products and competitors",
+		Goal:      "providing in-depth insights to guide marketing strategies",
+	})
 	marketAnalystAgent.Configure(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
-
 	task1 := forza.NewTask(marketAnalystAgent)
-	task1.SetPrompt("Give me a full report about the market of electric cars in the US.")
+	task1.Instruction("Give me a full report about the market of electric cars in the US.")
 
-	contentCreatorAgent := forza.NewAgent("As a Creative Content Creator at a top-tier " +
-		"digital marketing agency, you excel in crafting narratives " +
-		"that resonate with audiences on social media. " +
-		"Your expertise lies in turning marketing strategies " +
-		"into engaging stories and visual content that capture " +
-		"attention and inspire action.")
+	contentCreatorAgent := forza.NewAgent(&forza.AgentPersona{
+		Role:      "Creative Content Creator at a top-tier digital marketing agency",
+		Backstory: "you excel in crafting narratives that resonate with audiences on social media. Your expertise lies in turning marketing strategies into engaging stories and visual content that capture attention and inspire action",
+		Goal:      "Generate a creative social media post for a new line of eco-friendly products"},
+	)
+
 	contentCreatorAgent.Configure(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
-
 	task2 := forza.NewTask(contentCreatorAgent)
-	task2.SetPrompt("Generate a creative social media post for a new line of eco-friendly products.")
+	task2.Instruction("Generate a creative social media post for a new line of eco-friendly products.")
 
+	// RUNNING ALL CONCURRENTLY
 	f := forza.NewPipeline()
+
 	f.AddTasks(task1.Completion, task2.Completion)
 	result := f.RunConcurrently()
 
-	fmt.Println(result[0], "result TASK1")
+	fmt.Println("result TASK1: ", result[0])
 	fmt.Println("-----------------")
-	fmt.Println(result[1], "result TASK2")
+	fmt.Println("result TASK2: ", result[1])
 }
+
 
 ```
 </details>
@@ -137,7 +140,11 @@ func getUserId(params string) string {
 }
 
 func main() {
-	agentSpecialist := forza.NewAgent("You are a specialist to identify userId in the text")
+	agentSpecialist := forza.NewAgent(&forza.AgentPersona{
+		Role:      "specialist",
+		Backstory: "You are a specialist to identify userId in the text",
+		Goal:      "identify userId",
+	})
 	agentSpecialist.Configure(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
 
 	funcCallingParams := forza.FunctionShape{
@@ -148,8 +155,53 @@ func main() {
 	}
 
 	task := forza.NewTask(agentSpecialist)
-	task.SetPrompt("My name is robert and my user id is 3434")
+	task.Instruction("My name is robert and my user id is 3434")
 	task.SetFunction("get_user_id", "user will provide an userId, identify and get this userId", funcCallingParams, getUserId)
+
+	result := task.Completion()
+	fmt.Println("result TASK: ", result)
+}
+
+```
+</details>
+
+<details>
+<summary>Agents chains for tasks</summary>
+
+```go
+package main
+
+import (
+	"fmt"
+
+	"github.com/vitoraguila/forza"
+)
+
+func main() {
+	marketAnalystAgent := forza.NewAgent(&forza.AgentPersona{
+		Role:      "Lead Market Analyst at a premier digital marketing firm",
+		Backstory: "you specialize in dissecting online business landscapes. Conduct amazing analysis of the products and competitors",
+		Goal:      "providing in-depth insights to guide marketing strategies",
+	})
+	marketAnalystAgent.Configure(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
+	task1 := forza.NewTask(marketAnalystAgent)
+	task1.Instruction("Give me a full report about the market of electric cars in the US.")
+
+	contentCreatorAgent := forza.NewAgent(&forza.AgentPersona{
+		Role:      "Creative Content Creator at a top-tier digital marketing agency",
+		Backstory: "you excel in crafting narratives that resonate with audiences on social media. Your expertise lies in turning marketing strategies into engaging stories and visual content that capture attention and inspire action",
+		Goal:      "Generate a creative social media post for a new line of eco-friendly products"},
+	)
+
+	contentCreatorAgent.Configure(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
+	task2 := forza.NewTask(contentCreatorAgent)
+	task2.Instruction("Generate a creative social media post for a new line of eco-friendly products.")
+
+	// RUNNING ALL CONCURRENTLY
+	f := forza.NewPipeline()
+	chain := f.CreateChain(*task1.WithCompletion(), *task2.WithCompletion())
+
+	fmt.Println("Chain result: ", chain())
 }
 
 ```
@@ -160,4 +212,4 @@ func main() {
 - [ ] Add tests
 - [ ] Add support for Gemini
 - [ ] Add support for Llama
-- [ ] Implement chain of actions
+- [x] Implement chain of actions

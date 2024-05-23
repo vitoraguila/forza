@@ -11,12 +11,22 @@ type agent struct {
 	prompts      *[]AgentPrompts
 }
 
-func NewAgent(context string) *agent {
+type AgentPersona struct {
+	Role      string
+	Backstory string
+	Goal      string
+}
+
+func NewAgent(persona *AgentPersona) *agent {
 	adaptor := newAdaptor()
 	initialPrompt := &[]AgentPrompts{
 		{
 			Role:    AgentRoleSystem,
-			Context: context,
+			Context: fmt.Sprintf("As a %s, %s", persona.Role, persona.Backstory),
+		},
+		{
+			Role:    AgentRoleSystem,
+			Context: fmt.Sprintf("Your goal is %s", persona.Goal),
 		},
 	}
 
@@ -46,12 +56,4 @@ func (a *agent) AddExtraPrompt(context string, role string) {
 		Role:    role,
 		Context: context,
 	})
-}
-
-func (a *agent) WithContext(context string) {
-	(*a.prompts)[0].Context = context
-}
-
-func (a *agent) WithRole(role string) {
-	(*a.prompts)[0].Role = role
 }

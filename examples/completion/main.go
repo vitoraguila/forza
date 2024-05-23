@@ -7,11 +7,15 @@ import (
 )
 
 func main() {
-	agentStoryTeller := forza.NewAgent("you are a storyteller, write as a fairy tale for kids")
+	agentStoryTeller := forza.NewAgent(&forza.AgentPersona{
+		Role:      "storyteller",
+		Backstory: "you are a storyteller, write as a fairy tale for kids",
+		Goal:      "write a fairy tale",
+	})
 	agentStoryTeller.Configure(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
 	task := forza.NewTask(agentStoryTeller)
-	task.SetPrompt("who is Hercules?")
+	task.Instruction("who is Hercules?")
 
 	result := task.Completion()
-	fmt.Println(result, "result TASK")
+	fmt.Println("result TASK: ", result)
 }

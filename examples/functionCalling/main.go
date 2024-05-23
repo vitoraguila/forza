@@ -24,7 +24,11 @@ func getUserId(params string) string {
 }
 
 func main() {
-	agentSpecialist := forza.NewAgent("You are a specialist to identify userId in the text")
+	agentSpecialist := forza.NewAgent(&forza.AgentPersona{
+		Role:      "specialist",
+		Backstory: "You are a specialist to identify userId in the text",
+		Goal:      "identify userId",
+	})
 	agentSpecialist.Configure(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
 
 	funcCallingParams := forza.FunctionShape{
@@ -35,6 +39,9 @@ func main() {
 	}
 
 	task := forza.NewTask(agentSpecialist)
-	task.SetPrompt("My name is robert and my user id is 3434")
+	task.Instruction("My name is robert and my user id is 3434")
 	task.SetFunction("get_user_id", "user will provide an userId, identify and get this userId", funcCallingParams, getUserId)
+
+	result := task.Completion()
+	fmt.Println("result TASK: ", result)
 }
