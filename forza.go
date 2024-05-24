@@ -7,33 +7,36 @@ import (
 )
 
 type forza struct {
-	tasks []taskFn
-	chain taskFn
+	tasks []taskChainFn
 }
 type taskFn func() string
+type taskChainFn func(...string) string
 
 func NewPipeline() *forza {
 	return &forza{}
 }
 
-func (f *forza) AddTasks(fn ...taskFn) {
+func (f *forza) AddTasks(fn ...taskChainFn) {
 	f.tasks = append(f.tasks, fn...)
 }
 
-func (f *forza) CreateChain(tasks ...task) taskFn {
+func (f *forza) CreateChain(tasks ...taskChainFn) taskFn {
 	return func() string {
 		var result string
 		for i, task := range tasks {
-			if task.chainAction == nil {
+			if task == nil {
 				panic("There is no action pre set for the task.")
 			}
 			fmt.Printf("Task %d of %d chains\n", i+1, len(tasks))
 
-			output := task.chainAction()
+			if i == 0 {
+				result = task()
+				continue
+			}
+
 			if (i + 1) < len(tasks) {
-				tasks[i+1].setChainOutput(output)
-			} else {
-				result = output
+				result = tasks[i+1](result)
+				continue
 			}
 		}
 		return result
@@ -51,7 +54,7 @@ func (f *forza) RunConcurrently() []string {
 	// Launch each task in a separate goroutine
 	for i, task := range f.tasks {
 		wg.Add(1)
-		go func(index int, task taskFn) {
+		go func(index int, task taskChainFn) {
 			defer wg.Done()
 			startTime := time.Now()
 			fmt.Printf("Task %d started at %s\n", index+1, startTime.Format("15:04:05.000"))

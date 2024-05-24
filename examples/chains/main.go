@@ -31,7 +31,7 @@ func main() {
 	task2.Instruction("Generate a creative social media post for a new line of eco-friendly products.")
 
 	f := forza.NewPipeline()
-	chain := f.CreateChain(*task1.WithCompletion(), *task2.WithCompletion())
+	chain := f.CreateChain(task1.Completion, task2.Completion)
 
 	fmt.Println("Chain result: ", chain())
 }

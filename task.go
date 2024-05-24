@@ -1,23 +1,16 @@
 package forza
 
+import "fmt"
+
 type task struct {
-	agent       *agent
-	prompt      string
-	chainAction taskFn
-	chainOutput string
+	agent  *agent
+	prompt string
 }
 
 func NewTask(agent *agent) *task {
 	return &task{
-		agent:       agent,
-		chainAction: nil,
+		agent: agent,
 	}
-}
-
-func (t *task) WithCompletion() *task {
-	t.chainAction = t.Completion
-
-	return t
 }
 
 func (t *task) Instruction(prompt string) {
@@ -30,19 +23,26 @@ func (t *task) checkAgentConfiguration() {
 	}
 }
 
-func (t *task) setChainOutput(o string) {
-	t.chainOutput = o
-}
+func (t *task) Completion(params ...string) string {
+	var context string
 
-func (t *task) Completion() string {
+	if len(params) > 1 {
+		panic("Error: too many arguments. Only one optional argument(context) is allowed.")
+	}
+
+	if len(params) == 1 {
+		fmt.Println("params: ", params)
+		context = params[0]
+	}
+
 	t.checkAgentConfiguration()
 	if t.prompt == "" {
 		panic("no prompt set")
 	}
 
 	var prompt string = t.prompt
-	if t.chainOutput != "" {
-		prompt = prompt + "\n\n take in consideration the following info: " + t.chainOutput
+	if context != "" {
+		prompt = prompt + "\n\n take in consideration the following context: " + context
 	}
 
 	return t.agent.adaptor.completion(prompt, t.agent.prompts)
