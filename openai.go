@@ -6,32 +6,78 @@ import (
 	"os"
 
 	"github.com/sashabaranov/go-openai"
-	"github.com/sashabaranov/go-openai/jsonschema"
 )
 
-type openAIService interface {
-	withModel(model string)
-	addFunction(name string, description string, params jsonschema.Definition, fn func(param string) string)
-	completion(prompt string, prompts *[]AgentPrompts) string
-}
-
 type openAI struct {
-	model        string
-	Functions    []openai.FunctionDefinition
-	FnExecutable *map[string]func(param string) string
+	Config        *llmCOnfig
+	Functions     []openai.FunctionDefinition
+	FnExecutable  *map[string]func(param string) string
+	systemPrompts *[]agentPrompts
+	userPrompt    *string
 }
 
-func newOpenAI() openAIService {
+func NewOpenAI(c *llmCOnfig, t *task) llmService {
 	var fnExecutable = make(map[string]func(param string) string)
+
+	if t.agent.Role == "" || t.agent.Backstory == "" || t.agent.Goal == "" {
+		panic("Agent Role(WithRole()), Backstory(WithBackstory()) and Goal(WithGoal) are required")
+	}
+
+	systemPrompts := []agentPrompts{
+		{
+			Role:    agentRoleSystem,
+			Context: fmt.Sprintf("As a %s, %s", t.agent.Role, t.agent.Backstory),
+		},
+		{
+			Role:    agentRoleSystem,
+			Context: fmt.Sprintf("Your goal is %s", t.agent.Goal),
+		},
+	}
+
 	return &openAI{
-		FnExecutable: &fnExecutable,
+		Config:        c,
+		FnExecutable:  &fnExecutable,
+		systemPrompts: &systemPrompts,
+		userPrompt:    &t.prompt,
 	}
 }
 
-func (oai *openAI) completion(prompt string, prompts *[]AgentPrompts) string {
+func (o *openAI) WithUserPrompt(prompt string) {
+	o.userPrompt = &prompt
+}
+
+func (o *openAI) AddFunctions(name string, description string, params functionShape, fn func(param string) string) {
+	jsonschema := generateSchema(params)
+
+	o.Functions = append(o.Functions, openai.FunctionDefinition{
+		Name:        name,
+		Description: description,
+		Parameters:  jsonschema,
+	})
+
+	// store the function in a map
+	(*o.FnExecutable)[name] = fn
+}
+
+func (o openAI) Completion(params ...string) string {
+	if o.userPrompt == nil {
+		panic("User prompt is required")
+	}
+
+	var userPrompt string = *o.userPrompt
+
+	if len(params) > 1 {
+		panic("Error: too many arguments. Only one optional argument(context) is allowed.")
+	}
+
+	if len(params) == 1 {
+		var promptContext = params[0]
+		userPrompt = userPrompt + "\n\n take in consideration the following context: " + promptContext
+	}
+
 	var fn []openai.Tool
-	if len(oai.Functions) > 0 {
-		for _, f := range oai.Functions {
+	if len(o.Functions) > 0 {
+		for _, f := range o.Functions {
 			t := openai.Tool{
 				Type:     openai.ToolTypeFunction,
 				Function: &f,
@@ -41,7 +87,7 @@ func (oai *openAI) completion(prompt string, prompts *[]AgentPrompts) string {
 	}
 
 	var messages []openai.ChatCompletionMessage
-	for _, p := range *prompts {
+	for _, p := range *o.systemPrompts {
 		messages = append(messages, openai.ChatCompletionMessage{
 			Role:    p.Role,
 			Content: p.Context,
@@ -50,13 +96,13 @@ func (oai *openAI) completion(prompt string, prompts *[]AgentPrompts) string {
 
 	user := openai.ChatCompletionMessage{
 		Role:    openai.ChatMessageRoleUser,
-		Content: prompt,
+		Content: userPrompt,
 	}
 	messages = append(messages, user)
 
 	var client *openai.Client
 
-	if oai.model == ProviderAzure {
+	if o.Config.provider == ProviderAzure {
 		azureApiKey := os.Getenv("AZURE_OPEN_AI_API_KEY")
 		azureEndpoint := os.Getenv("AZURE_OPEN_AI_ENDPOINT")
 
@@ -77,7 +123,7 @@ func (oai *openAI) completion(prompt string, prompts *[]AgentPrompts) string {
 	}
 
 	openaiReq := openai.ChatCompletionRequest{
-		Model:    openai.GPT3Dot5Turbo,
+		Model:    o.Config.model,
 		Messages: messages,
 	}
 
@@ -101,7 +147,7 @@ func (oai *openAI) completion(prompt string, prompts *[]AgentPrompts) string {
 		// fmt.Printf("OpenAI called us back wanting to invoke our function '%v' with params '%v'\n",
 		// 	msg.ToolCalls[0].Function.Name, msg.ToolCalls[0].Function.Arguments)
 
-		fn := (*oai.FnExecutable)[msg.ToolCalls[0].Function.Name]
+		fn := (*o.FnExecutable)[msg.ToolCalls[0].Function.Name]
 
 		messages = append(messages, openai.ChatCompletionMessage{
 			Role:       openai.ChatMessageRoleTool,
@@ -120,19 +166,4 @@ func (oai *openAI) completion(prompt string, prompts *[]AgentPrompts) string {
 	}
 
 	return resp.Choices[0].Message.Content
-}
-
-func (oai *openAI) withModel(model string) {
-	oai.model = model
-}
-
-func (oai *openAI) addFunction(name string, description string, params jsonschema.Definition, fn func(param string) string) {
-	oai.Functions = append(oai.Functions, openai.FunctionDefinition{
-		Name:        name,
-		Description: description,
-		Parameters:  params,
-	})
-
-	// store the function in a map
-	(*oai.FnExecutable)[name] = fn
 }

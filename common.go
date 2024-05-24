@@ -3,17 +3,13 @@ package forza
 import (
 	"fmt"
 
+	"github.com/sashabaranov/go-openai"
 	"github.com/sashabaranov/go-openai/jsonschema"
 )
 
-type AgentPrompts struct {
+type agentPrompts struct {
 	Role    string
 	Context string
-}
-
-type FunctionProps struct {
-	Description string
-	Required    bool
 }
 
 const (
@@ -22,14 +18,9 @@ const (
 )
 
 const (
-	AgentRoleSystem = "system"
-	AgentRoleUser   = "user"
+	agentRoleSystem = "system"
+	agentRoleUser   = "user"
 )
-
-var ListProviders = []string{
-	ProviderOpenAi,
-	ProviderAzure,
-}
 
 type models interface {
 	ListModels() []string
@@ -45,9 +36,9 @@ func (m openAIModels) ListModels() []string {
 }
 
 var OpenAIModels = openAIModels{
-	Gpt35turbo: "gpt-3.5-turbo",
-	Gpt4:       "gpt-4",
-	Gpt4o:      "gpt-4o",
+	Gpt35turbo: openai.GPT3Dot5Turbo,
+	Gpt4:       openai.GPT4,
+	Gpt4o:      openai.GPT4o,
 }
 
 // Map of providers to their models
@@ -55,8 +46,6 @@ var availableModels = map[string]models{
 	ProviderOpenAi: OpenAIModels,
 	ProviderAzure:  OpenAIModels, // Assuming Azure has the same models
 }
-
-type FunctionShape map[string]FunctionProps
 
 func checkModel(provider, modelName string) (bool, string) {
 	models, exists := availableModels[provider]
@@ -71,16 +60,7 @@ func checkModel(provider, modelName string) (bool, string) {
 	return false, fmt.Sprintf("model %s does not exist. odels available for provider selected are: %s\n", modelName, models.ListModels())
 }
 
-func checkProvider(provider string) bool {
-	switch provider {
-	case ProviderOpenAi, ProviderAzure:
-		return true
-	default:
-		return false
-	}
-}
-
-func generateSchema(shape FunctionShape) jsonschema.Definition {
+func generateSchema(shape functionShape) jsonschema.Definition {
 	properties := make(map[string]jsonschema.Definition)
 	var required []string
 
