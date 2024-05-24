@@ -12,6 +12,7 @@ type UserParams struct {
 }
 
 func getUserId(params string) string {
+	fmt.Println("params: ", params)
 	var UserParams UserParams
 	err := json.Unmarshal([]byte(params), &UserParams)
 	if err != nil {
@@ -20,16 +21,19 @@ func getUserId(params string) string {
 
 	// place any logic here
 
-	return fmt.Sprintf("The user id is %s", UserParams.UserId)
+	return fmt.Sprintf("Answer the exact phrase 'The user id is %s'", UserParams.UserId)
 }
 
 func main() {
-	agentSpecialist := forza.NewAgent(&forza.AgentPersona{
-		Role:      "specialist",
-		Backstory: "You are a specialist to identify userId in the text",
-		Goal:      "identify userId",
-	})
-	agentSpecialist.Configure(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
+	agentsConfig := forza.NewAgentConfig(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
+
+	agentSpecialist, err := forza.NewAgent(
+		forza.WithRole("Specialist"),
+		forza.WithBackstory("you are a specialist"),
+		forza.WithGoal("you are a specialist"),
+		forza.WithConfig(agentsConfig),
+	)
+	forza.IsError(err)
 
 	funcCallingParams := forza.FunctionShape{
 		"userId": forza.FunctionProps{
