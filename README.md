@@ -9,6 +9,7 @@ We support:
 * LLM agents
 * Tasks
 * Run tasks concurrently
+* Run tasks in chain
 * OpenAI
 * Azure OpenAI
 * Function calling
@@ -20,6 +21,18 @@ go get github.com/vitoraguila/forza
 ```
 Currently, `forza` requires Go version 1.18 or greater.
 
+## Environment variables
+
+### OpenAI
+```.env
+OPENAI_API_KEY=
+```
+
+### Azure OpenAI
+```.env
+AZURE_OPEN_AI_API_KEY=
+AZURE_OPEN_AI_ENDPOINT=
+```
 
 ## Usage
 
@@ -35,7 +48,10 @@ import (
 )
 
 func main() {
-	config := forza.NewLLMConfig(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
+	config := forza.NewLLMConfig().
+		WithProvider(forza.ProviderOpenAi).
+		WithModel(forza.OpenAIModels.Gpt35turbo).
+		WithOpenAiCredentials(os.Getenv("OPENAI_API_KEY"))
 
 	agentWriter := forza.NewAgent().
 		WithRole("You are famous writer").
@@ -78,7 +94,10 @@ import (
 )
 
 func main() {
-	config := forza.NewLLMConfig(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
+	config := forza.NewLLMConfig().
+		WithProvider(forza.ProviderOpenAi).
+		WithModel(forza.OpenAIModels.Gpt35turbo).
+		WithOpenAiCredentials(os.Getenv("OPENAI_API_KEY"))
 
 	marketAnalystAgent := forza.NewAgent().
 		WithRole("Lead Market Analyst at a premier digital marketing firm").
@@ -141,7 +160,10 @@ func getUserId(params string) string {
 }
 
 func main() {
-	config := forza.NewLLMConfig(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
+	config := forza.NewLLMConfig().
+		WithProvider(forza.ProviderOpenAi).
+		WithModel(forza.OpenAIModels.Gpt35turbo).
+		WithOpenAiCredentials(os.Getenv("OPENAI_API_KEY"))
 
 	agentSpecialist := forza.NewAgent().
 		WithRole("Specialist").
@@ -176,7 +198,11 @@ import (
 )
 
 func main() {
-	config := forza.NewLLMConfig(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
+	config := forza.NewLLMConfig().
+		WithProvider(forza.ProviderOpenAi).
+		WithModel(forza.OpenAIModels.Gpt35turbo).
+		WithOpenAiCredentials(os.Getenv("OPENAI_API_KEY"))	
+		
 	marketAnalystAgent := forza.NewAgent()
 	marketAnalystAgent.
 		WithRole("Lead Market Analyst at a premier digital marketing firm").

@@ -3,20 +3,25 @@ package forza
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/sashabaranov/go-openai"
 )
 
+type openAiCredentials struct {
+	openAiApiKey        string
+	azureOpenAiApiKey   string
+	azureOpenAiEndpoint string
+}
+
 type openAI struct {
-	Config        *llmCOnfig
+	Config        *llmConfig
 	Functions     []openai.FunctionDefinition
 	FnExecutable  *map[string]func(param string) string
 	systemPrompts *[]agentPrompts
 	userPrompt    *string
 }
 
-func NewOpenAI(c *llmCOnfig, t *task) llmService {
+func NewOpenAI(c *llmConfig, t *task) llmService {
 	var fnExecutable = make(map[string]func(param string) string)
 
 	if t.agent.Role == "" || t.agent.Backstory == "" || t.agent.Goal == "" {
@@ -103,8 +108,8 @@ func (o openAI) Completion(params ...string) string {
 	var client *openai.Client
 
 	if o.Config.provider == ProviderAzure {
-		azureApiKey := os.Getenv("AZURE_OPEN_AI_API_KEY")
-		azureEndpoint := os.Getenv("AZURE_OPEN_AI_ENDPOINT")
+		azureApiKey := o.Config.credentials.openAi.azureOpenAiApiKey
+		azureEndpoint := o.Config.credentials.openAi.azureOpenAiEndpoint
 
 		if azureApiKey == "" || azureEndpoint == "" {
 			panic("AZURE_OPEN_AI_API_KEY or AZURE_OPEN_AI_ENDPOINT not provided")
@@ -113,7 +118,7 @@ func (o openAI) Completion(params ...string) string {
 		config := openai.DefaultAzureConfig(azureApiKey, azureEndpoint)
 		client = openai.NewClientWithConfig(config)
 	} else {
-		openAIApiKey := os.Getenv("OPENAI_API_KEY")
+		openAIApiKey := o.Config.credentials.openAi.openAiApiKey
 
 		if openAIApiKey == "" {
 			panic("OPENAI_API_KEY Key not provided")

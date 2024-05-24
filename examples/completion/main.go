@@ -2,12 +2,16 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/vitoraguila/forza"
 )
 
 func main() {
-	config := forza.NewLLMConfig(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
+	config := forza.NewLLMConfig().
+		WithProvider(forza.ProviderOpenAi).
+		WithModel(forza.OpenAIModels.Gpt35turbo).
+		WithOpenAiCredentials(os.Getenv("OPENAI_API_KEY"))
 
 	agentWriter := forza.NewAgent().
 		WithRole("You are famous writer").

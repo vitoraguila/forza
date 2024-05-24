@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/vitoraguila/forza"
 )
@@ -25,7 +26,10 @@ func getUserId(params string) string {
 }
 
 func main() {
-	config := forza.NewLLMConfig(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
+	config := forza.NewLLMConfig().
+		WithProvider(forza.ProviderOpenAi).
+		WithModel(forza.OpenAIModels.Gpt35turbo).
+		WithOpenAiCredentials(os.Getenv("OPENAI_API_KEY"))
 
 	agentSpecialist := forza.NewAgent().
 		WithRole("Specialist").

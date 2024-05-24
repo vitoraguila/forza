@@ -6,7 +6,7 @@ type task struct {
 }
 
 type taskService interface {
-	WithLLM(c *llmCOnfig) llmService
+	WithLLM(c *llmConfig) llmService
 }
 
 func NewTask(agent *agent) taskService {
@@ -15,7 +15,7 @@ func NewTask(agent *agent) taskService {
 	}
 }
 
-func (t *task) WithLLM(c *llmCOnfig) llmService {
+func (t *task) WithLLM(c *llmConfig) llmService {
 	isModelExist, msg := checkModel(c.provider, c.model)
 	if !isModelExist {
 		panic(msg)

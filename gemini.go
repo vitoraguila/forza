@@ -1,10 +1,10 @@
 package forza
 
 type gemini struct {
-	Config *llmCOnfig
+	Config *llmConfig
 }
 
-func Newgemini(c *llmCOnfig, t *task) llmService {
+func Newgemini(c *llmConfig, t *task) llmService {
 	return &gemini{
 		Config: c,
 	}
