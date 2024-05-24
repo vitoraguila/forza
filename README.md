@@ -35,14 +35,18 @@ import (
 )
 
 func main() {
-	agentStoryTeller := forza.NewAgent(&forza.AgentPersona{
-		Role:      "storyteller",
-		Backstory: "you are a storyteller, write as a fairy tale for kids",
-		Goal:      "write a fairy tale",
-	})
-	agentStoryTeller.Configure(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
-	task := forza.NewTask(agentStoryTeller)
-	task.Instruction("who is Hercules?")
+	agentsConfig := forza.NewAgentConfig(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
+
+	agentWriter, err := forza.NewAgent(
+		forza.WithRole("You are famous writer"),
+		forza.WithBackstory("you know how to captivate your audience with your words. You have a gift for storytelling and creating magical worlds with your imagination. You are known for your enchanting tales that transport readers to far-off lands and spark their imagination."),
+		forza.WithGoal("building a compelling narrative"),
+		forza.WithConfig(agentsConfig),
+	)
+	forza.IsError(err)
+
+	task := forza.NewTask(agentWriter)
+	task.Instruction("the character is Hercules")
 
 	result := task.Completion()
 	fmt.Println("result TASK: ", result)
@@ -76,22 +80,27 @@ import (
 )
 
 func main() {
-	marketAnalystAgent := forza.NewAgent(&forza.AgentPersona{
-		Role:      "Lead Market Analyst at a premier digital marketing firm",
-		Backstory: "you specialize in dissecting online business landscapes. Conduct amazing analysis of the products and competitors",
-		Goal:      "providing in-depth insights to guide marketing strategies",
-	})
-	marketAnalystAgent.Configure(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
+	agentsConfig := forza.NewAgentConfig(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
+
+	marketAnalystAgent, err := forza.NewAgent(
+		forza.WithRole("Lead Market Analyst at a premier digital marketing firm"),
+		forza.WithBackstory("you specialize in dissecting online business landscapes. Conduct amazing analysis of the products and competitors"),
+		forza.WithGoal("providing in-depth insights to guide marketing strategies"),
+		forza.WithConfig(agentsConfig),
+	)
+	forza.IsError(err)
+
 	task1 := forza.NewTask(marketAnalystAgent)
 	task1.Instruction("Give me a full report about the market of electric cars in the US.")
 
-	contentCreatorAgent := forza.NewAgent(&forza.AgentPersona{
-		Role:      "Creative Content Creator at a top-tier digital marketing agency",
-		Backstory: "you excel in crafting narratives that resonate with audiences on social media. Your expertise lies in turning marketing strategies into engaging stories and visual content that capture attention and inspire action",
-		Goal:      "Generate a creative social media post for a new line of eco-friendly products"},
+	contentCreatorAgent, err := forza.NewAgent(
+		forza.WithRole("Creative Content Creator at a top-tier digital marketing agency"),
+		forza.WithBackstory("you excel in crafting narratives that resonate with audiences on social media. Your expertise lies in turning marketing strategies into engaging stories and visual content that capture attention and inspire action"),
+		forza.WithGoal("Generate a creative social media post for a new line of eco-friendly products"),
+		forza.WithConfig(agentsConfig),
 	)
+	forza.IsError(err)
 
-	contentCreatorAgent.Configure(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
 	task2 := forza.NewTask(contentCreatorAgent)
 	task2.Instruction("Generate a creative social media post for a new line of eco-friendly products.")
 
@@ -105,7 +114,6 @@ func main() {
 	fmt.Println("-----------------")
 	fmt.Println("result TASK2: ", result[1])
 }
-
 
 ```
 </details>
@@ -128,6 +136,7 @@ type UserParams struct {
 }
 
 func getUserId(params string) string {
+	fmt.Println("params: ", params)
 	var UserParams UserParams
 	err := json.Unmarshal([]byte(params), &UserParams)
 	if err != nil {
@@ -136,16 +145,19 @@ func getUserId(params string) string {
 
 	// place any logic here
 
-	return fmt.Sprintf("The user id is %s", UserParams.UserId)
+	return fmt.Sprintf("Answer the exact phrase 'The user id is %s'", UserParams.UserId)
 }
 
 func main() {
-	agentSpecialist := forza.NewAgent(&forza.AgentPersona{
-		Role:      "specialist",
-		Backstory: "You are a specialist to identify userId in the text",
-		Goal:      "identify userId",
-	})
-	agentSpecialist.Configure(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
+	agentsConfig := forza.NewAgentConfig(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
+
+	agentSpecialist, err := forza.NewAgent(
+		forza.WithRole("Specialist"),
+		forza.WithBackstory("you are a specialist"),
+		forza.WithGoal("you are a specialist"),
+		forza.WithConfig(agentsConfig),
+	)
+	forza.IsError(err)
 
 	funcCallingParams := forza.FunctionShape{
 		"userId": forza.FunctionProps{
@@ -178,26 +190,29 @@ import (
 )
 
 func main() {
-	marketAnalystAgent := forza.NewAgent(&forza.AgentPersona{
-		Role:      "Lead Market Analyst at a premier digital marketing firm",
-		Backstory: "you specialize in dissecting online business landscapes. Conduct amazing analysis of the products and competitors",
-		Goal:      "providing in-depth insights to guide marketing strategies",
-	})
-	marketAnalystAgent.Configure(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
+	agentsConfig := forza.NewAgentConfig(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
+	marketAnalystAgent, err := forza.NewAgent(
+		forza.WithRole("Lead Market Analyst at a premier digital marketing firm"),
+		forza.WithBackstory("you specialize in dissecting online business landscapes. Conduct amazing analysis of the products and competitors"),
+		forza.WithGoal("providing in-depth insights to guide marketing strategies"),
+		forza.WithConfig(agentsConfig),
+	)
+	forza.IsError(err)
+
 	task1 := forza.NewTask(marketAnalystAgent)
 	task1.Instruction("Give me a full report about the market of electric cars in the US.")
 
-	contentCreatorAgent := forza.NewAgent(&forza.AgentPersona{
-		Role:      "Creative Content Creator at a top-tier digital marketing agency",
-		Backstory: "you excel in crafting narratives that resonate with audiences on social media. Your expertise lies in turning marketing strategies into engaging stories and visual content that capture attention and inspire action",
-		Goal:      "Generate a creative social media post for a new line of eco-friendly products"},
+	contentCreatorAgent, err := forza.NewAgent(
+		forza.WithRole("Creative Content Creator at a top-tier digital marketing agency"),
+		forza.WithBackstory("you excel in crafting narratives that resonate with audiences on social media. Your expertise lies in turning marketing strategies into engaging stories and visual content that capture attention and inspire action"),
+		forza.WithGoal("Generate a creative social media post for a new line of eco-friendly products"),
+		forza.WithConfig(agentsConfig),
 	)
+	forza.IsError(err)
 
-	contentCreatorAgent.Configure(forza.ProviderOpenAi, forza.OpenAIModels.Gpt35turbo)
 	task2 := forza.NewTask(contentCreatorAgent)
 	task2.Instruction("Generate a creative social media post for a new line of eco-friendly products.")
 
-	// RUNNING ALL CONCURRENTLY
 	f := forza.NewPipeline()
 	chain := f.CreateChain(*task1.WithCompletion(), *task2.WithCompletion())
 

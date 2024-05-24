@@ -23,8 +23,3 @@ func main() {
 	result := task.Completion()
 	fmt.Println("result TASK: ", result)
 }
-
-// if err := FindAndSetUserAge("bob@example.com", 21); err != nil {
-//     fmt.Println("failed finding or updating user: %s", err)
-//     return
-// }
