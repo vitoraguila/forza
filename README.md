@@ -1,8 +1,8 @@
 <a href="https://flutter.dev/">
   <h1 align="center">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="">
-      <img alt="Flutter" src="">
+      <source media="(prefers-color-scheme: dark)" srcset="https://github.com/vitoraguila/forza/blob/master/assets/forza_logo.png?raw=true">
+      <img alt="Forza" src="https://github.com/vitoraguila/forza/blob/master/assets/forza_logo.png?raw=true">
     </picture>
   </h1>
 </a>
