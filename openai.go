@@ -2,9 +2,11 @@ package forza
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/sashabaranov/go-openai"
+	"github.com/vitoraguila/forza/tools"
 )
 
 type openAiCredentials struct {
@@ -16,26 +18,24 @@ type openAiCredentials struct {
 type openAI struct {
 	Config        *llmConfig
 	Functions     []openai.FunctionDefinition
-	FnExecutable  *map[string]func(param string) string
+	FnExecutable  *map[string]func(param string) (string, error)
+	tools         *map[string]bool
 	systemPrompts *[]agentPrompts
 	userPrompt    *string
 }
 
-func NewOpenAI(c *llmConfig, t *task) llmService {
-	var fnExecutable = make(map[string]func(param string) string)
-
-	if t.agent.Role == "" || t.agent.Backstory == "" || t.agent.Goal == "" {
-		panic("Agent Role(WithRole()), Backstory(WithBackstory()) and Goal(WithGoal) are required")
-	}
+func NewOpenAI(c *llmConfig, a *agent) llmAgent {
+	var fnExecutable = make(map[string]func(param string) (string, error))
+	var tools = make(map[string]bool)
 
 	systemPrompts := []agentPrompts{
 		{
 			Role:    agentRoleSystem,
-			Context: fmt.Sprintf("As a %s, %s", t.agent.Role, t.agent.Backstory),
+			Context: fmt.Sprintf("As a %s, %s", a.Role, a.Backstory),
 		},
 		{
 			Role:    agentRoleSystem,
-			Context: fmt.Sprintf("Your goal is %s", t.agent.Goal),
+			Context: fmt.Sprintf("Your goal is %s", a.Goal),
 		},
 	}
 
@@ -43,7 +43,7 @@ func NewOpenAI(c *llmConfig, t *task) llmService {
 		Config:        c,
 		FnExecutable:  &fnExecutable,
 		systemPrompts: &systemPrompts,
-		userPrompt:    &t.prompt,
+		tools:         &tools,
 	}
 }
 
@@ -51,9 +51,30 @@ func (o *openAI) WithUserPrompt(prompt string) {
 	o.userPrompt = &prompt
 }
 
-func (o *openAI) AddFunctions(name string, description string, params functionShape, fn func(param string) string) {
+func (o *openAI) WithTools(tools ...tools.Tool) {
+	for _, t := range tools {
+		fmt.Println("Adding tool: ", t.Name())
+		o.Functions = append(o.Functions, openai.FunctionDefinition{
+			Name:        t.Name(),
+			Description: t.Description(),
+			Parameters: map[string]any{
+				"properties": map[string]any{
+					"input": map[string]string{"title": "input", "type": "string"},
+				},
+				"required": []string{"input"},
+				"type":     "object",
+			},
+		})
+
+		(*o.FnExecutable)[t.Name()] = t.Call
+		(*o.tools)[t.Name()] = true
+	}
+}
+
+func (o *openAI) AddCustomTools(name string, description string, params functionShape, fn func(param string) (string, error)) {
 	jsonschema := generateSchema(params)
 
+	fmt.Println("Adding tool: ", name)
 	o.Functions = append(o.Functions, openai.FunctionDefinition{
 		Name:        name,
 		Description: description,
@@ -144,7 +165,6 @@ func (o openAI) Completion(params ...string) string {
 		fmt.Printf("Completion error: %v\n", err)
 		return ""
 	}
-
 	msg := resp.Choices[0].Message
 
 	if len(msg.ToolCalls) > 0 {
@@ -152,14 +172,40 @@ func (o openAI) Completion(params ...string) string {
 		// fmt.Printf("OpenAI called us back wanting to invoke our function '%v' with params '%v'\n",
 		// 	msg.ToolCalls[0].Function.Name, msg.ToolCalls[0].Function.Arguments)
 
-		fn := (*o.FnExecutable)[msg.ToolCalls[0].Function.Name]
+		for _, toolCall := range msg.ToolCalls {
+			fn := (*o.FnExecutable)[toolCall.Function.Name]
 
-		messages = append(messages, openai.ChatCompletionMessage{
-			Role:       openai.ChatMessageRoleTool,
-			Content:    fn(msg.ToolCalls[0].Function.Arguments),
-			Name:       msg.ToolCalls[0].Function.Name,
-			ToolCallID: msg.ToolCalls[0].ID,
-		})
+			toolInputStr := toolCall.Function.Arguments
+
+			toolInput := toolInputStr
+
+			if (*o.tools)[toolCall.Function.Name] {
+				toolInputMap := make(map[string]any, 0)
+				err := json.Unmarshal([]byte(toolInputStr), &toolInputMap)
+				if err != nil {
+					// return nil, nil, err
+				}
+
+				if arg1, ok := toolInputMap["input"]; ok {
+					toolInputCheck, ok := arg1.(string)
+					if ok {
+						toolInput = toolInputCheck
+					}
+				}
+			}
+
+			content, err := fn(toolInput)
+			if err != nil {
+				fmt.Printf("Error calling function: %v\n", err)
+			}
+
+			messages = append(messages, openai.ChatCompletionMessage{
+				Role:       openai.ChatMessageRoleTool,
+				Content:    content,
+				Name:       toolCall.Function.Name,
+				ToolCallID: toolCall.ID,
+			})
+		}
 
 		openaiReq.Messages = messages
 

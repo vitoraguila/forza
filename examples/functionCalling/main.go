@@ -1,28 +1,19 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 
 	"github.com/vitoraguila/forza"
+	s "github.com/vitoraguila/forza/tools/scraper"
 )
 
-type UserParams struct {
-	UserId string `json:"userId" required:"true"`
-}
-
-func getUserId(params string) string {
-	fmt.Println("params: ", params)
-	var UserParams UserParams
-	err := json.Unmarshal([]byte(params), &UserParams)
-	if err != nil {
-		panic(err)
-	}
+func getUserId(input string) (string, error) {
+	fmt.Println("input: ", input)
 
 	// place any logic here
 
-	return fmt.Sprintf("Answer the exact phrase 'The user id is %s'", UserParams.UserId)
+	return fmt.Sprintf("Answer the exact phrase 'The user id is %s'", input), nil
 }
 
 func main() {
@@ -32,18 +23,20 @@ func main() {
 		WithOpenAiCredentials(os.Getenv("OPENAI_API_KEY"))
 
 	agentSpecialist := forza.NewAgent().
-		WithRole("Specialist").
-		WithBackstory("you are a specialist").
-		WithGoal("you are a specialist")
+		WithRole("Expert to extract content").
+		WithBackstory("You will extract two kind of content: a userId and an URL in format http or https. Be super precisely about those formats, userId has never https/http before").
+		WithGoal("If the user provide a URL, extract the content from this URL, if the user provide a userId, extract the content from this userId.")
 
+	scraper, _ := s.NewScraper()
 	funcCallingParams := forza.NewFunction(
 		forza.WithProperty("userId", "user id description", true),
 	)
 
-	task := forza.NewTask(agentSpecialist).WithLLM(config)
-	task.WithUserPrompt("My name is robert and my user id is 3434")
-	task.AddFunctions("get_user_id", "user will provide an userId, identify and get this userId", funcCallingParams, getUserId)
+	tasks := agentSpecialist.NewLLMTask(config)
+	tasks.WithUserPrompt("what this link is about https://blog.vitoraguila.com/clwaogts30003l808xrbgumu3 ?")
+	tasks.AddCustomTools("get_user_id", "user will provide an userId, identify and get this userId", funcCallingParams, getUserId)
+	tasks.WithTools(scraper)
 
-	result := task.Completion()
+	result := tasks.Completion()
 	fmt.Println("result TASK: ", result)
 }

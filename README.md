@@ -183,7 +183,7 @@ func main() {
 
 	task := forza.NewTask(agentSpecialist).WithLLM(config)
 	task.WithUserPrompt("My name is robert and my user id is 3434")
-	task.AddFunctions("get_user_id", "user will provide an userId, identify and get this userId", funcCallingParams, getUserId)
+	task.AddCustomTools("get_user_id", "user will provide an userId, identify and get this userId", funcCallingParams, getUserId)
 
 	result := task.Completion()
 	fmt.Println("result TASK: ", result)
