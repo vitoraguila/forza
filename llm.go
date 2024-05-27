@@ -1,9 +1,12 @@
 package forza
 
-type llmService interface {
+import "github.com/vitoraguila/forza/tools"
+
+type llmAgent interface {
 	Completion(params ...string) string
-	AddFunctions(name string, description string, params functionShape, fn func(param string) string)
+	AddCustomTools(name string, description string, params functionShape, fn func(param string) (string, error))
 	WithUserPrompt(prompt string)
+	WithTools(tools ...tools.Tool)
 }
 
 type credentials struct {
