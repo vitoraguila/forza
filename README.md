@@ -50,6 +50,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/vitoraguila/forza"
 )
@@ -65,7 +66,7 @@ func main() {
 		WithBackstory("you know how to captivate your audience with your words. You have a gift for storytelling and creating magical worlds with your imagination. You are known for your enchanting tales that transport readers to far-off lands and spark their imagination.").
 		WithGoal("building a compelling narrative")
 
-	task := forza.NewTask(agentWriter).WithLLM(config)
+	task := agentWriter.NewLLMTask(config)
 	task.WithUserPrompt("Write a story about Hercules and the Hydra")
 
 	result := task.Completion()
@@ -96,6 +97,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/vitoraguila/forza"
 )
@@ -111,7 +113,7 @@ func main() {
 		WithBackstory("you specialize in dissecting online business landscapes. Conduct amazing analysis of the products and competitors").
 		WithGoal("providing in-depth insights to guide marketing strategies")
 
-	task1 := forza.NewTask(marketAnalystAgent).WithLLM(config)
+	task1 := marketAnalystAgent.NewLLMTask(config)
 	task1.WithUserPrompt("Give me a full report about the market of electric cars in the US.")
 
 	contentCreatorAgent := forza.NewAgent().
@@ -119,7 +121,7 @@ func main() {
 		WithBackstory("you excel in crafting narratives that resonate with audiences on social media. Your expertise lies in turning marketing strategies into engaging stories and visual content that capture attention and inspire action").
 		WithGoal("Generate a creative social media post for a new line of eco-friendly products")
 
-	task2 := forza.NewTask(contentCreatorAgent).WithLLM(config)
+	task2 := contentCreatorAgent.NewLLMTask(config)
 	task2.WithUserPrompt("Generate a creative social media post for a new line of eco-friendly products.")
 
 	// RUNNING ALL CONCURRENTLY
@@ -143,27 +145,19 @@ func main() {
 package main
 
 import (
-	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/vitoraguila/forza"
+	s "github.com/vitoraguila/forza/tools/scraper"
 )
 
-type UserParams struct {
-	UserId string `json:"userId" required:"true"`
-}
-
-func getUserId(params string) string {
-	fmt.Println("params: ", params)
-	var UserParams UserParams
-	err := json.Unmarshal([]byte(params), &UserParams)
-	if err != nil {
-		panic(err)
-	}
+func getUserId(input string) (string, error) {
+	fmt.Println("input: ", input)
 
 	// place any logic here
 
-	return fmt.Sprintf("Answer the exact phrase 'The user id is %s'", UserParams.UserId)
+	return fmt.Sprintf("Answer the exact phrase 'The user id is %s'", input), nil
 }
 
 func main() {
@@ -173,19 +167,21 @@ func main() {
 		WithOpenAiCredentials(os.Getenv("OPENAI_API_KEY"))
 
 	agentSpecialist := forza.NewAgent().
-		WithRole("Specialist").
-		WithBackstory("you are a specialist").
-		WithGoal("you are a specialist")
+		WithRole("Expert to extract content").
+		WithBackstory("You will extract two kind of content: a userId and an URL in format http or https. Be super precisely about those formats, userId has never https/http before").
+		WithGoal("If the user provide a URL, extract the content from this URL, if the user provide a userId, extract the content from this userId.")
 
+	scraper, _ := s.NewScraper()
 	funcCallingParams := forza.NewFunction(
 		forza.WithProperty("userId", "user id description", true),
 	)
 
-	task := forza.NewTask(agentSpecialist).WithLLM(config)
-	task.WithUserPrompt("My name is robert and my user id is 3434")
-	task.AddCustomTools("get_user_id", "user will provide an userId, identify and get this userId", funcCallingParams, getUserId)
+	tasks := agentSpecialist.NewLLMTask(config)
+	tasks.WithUserPrompt("what this link is about https://blog.vitoraguila.com/clwaogts30003l808xrbgumu3 ?")
+	tasks.AddCustomTools("get_user_id", "user will provide an userId, identify and get this userId", funcCallingParams, getUserId)
+	tasks.WithTools(scraper)
 
-	result := task.Completion()
+	result := tasks.Completion()
 	fmt.Println("result TASK: ", result)
 }
 
@@ -200,6 +196,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/vitoraguila/forza"
 )
@@ -208,15 +205,15 @@ func main() {
 	config := forza.NewLLMConfig().
 		WithProvider(forza.ProviderOpenAi).
 		WithModel(forza.OpenAIModels.Gpt35turbo).
-		WithOpenAiCredentials(os.Getenv("OPENAI_API_KEY"))	
-		
+		WithOpenAiCredentials(os.Getenv("OPENAI_API_KEY"))
+
 	marketAnalystAgent := forza.NewAgent()
 	marketAnalystAgent.
 		WithRole("Lead Market Analyst at a premier digital marketing firm").
 		WithBackstory("you specialize in dissecting online business landscapes. Conduct amazing analysis of the products and competitors").
 		WithGoal("providing in-depth insights to guide marketing strategies")
 
-	task1 := forza.NewTask(marketAnalystAgent).WithLLM(config)
+	task1 := marketAnalystAgent.NewLLMTask(config)
 	task1.WithUserPrompt("Give me a full report about the market of electric cars in the US.")
 
 	contentCreatorAgent := forza.NewAgent()
@@ -225,7 +222,7 @@ func main() {
 		WithBackstory("you excel in crafting narratives that resonate with audiences on social media. Your expertise lies in turning marketing strategies into engaging stories and visual content that capture attention and inspire action").
 		WithGoal("Generate a creative social media post for a new line of eco-friendly products")
 
-	task2 := forza.NewTask(contentCreatorAgent).WithLLM(config)
+	task2 := contentCreatorAgent.NewLLMTask(config)
 	task2.WithUserPrompt("Generate a creative social media post for a new line of eco-friendly products.")
 
 	f := forza.NewPipeline()
