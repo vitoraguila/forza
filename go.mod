@@ -1,11 +1,10 @@
-module github.com/urbanski/forza
+module github.com/vitoraguila/forza
 
 go 1.21.6
 
 require (
 	github.com/gocolly/colly v1.2.0
 	github.com/sashabaranov/go-openai v1.36.0
-	github.com/vitoraguila/forza v0.0.0-20240527003802-5bc87d1b0f93
 )
 
 require (
@@ -25,5 +24,3 @@ require (
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/protobuf v1.26.0 // indirect
 )
-
-replace github.com/vitoraguila/forza => /Users/will/go/src/github.com/urbanski/forza
