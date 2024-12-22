@@ -29,16 +29,20 @@ type openAIModels struct {
 	Gpt35turbo string
 	Gpt4       string
 	Gpt4o      string
+	Gpt4turbo  string
+	GPT4oMini  string
 }
 
 func (m openAIModels) ListModels() []string {
-	return []string{m.Gpt35turbo, m.Gpt4, m.Gpt4o}
+	return []string{m.Gpt35turbo, m.Gpt4, m.Gpt4o, m.Gpt4turbo, m.GPT4oMini}
 }
 
 var OpenAIModels = openAIModels{
 	Gpt35turbo: openai.GPT3Dot5Turbo,
 	Gpt4:       openai.GPT4,
 	Gpt4o:      openai.GPT4o,
+	Gpt4turbo:  openai.GPT4Turbo,
+	GPT4oMini:  openai.GPT4oMini,
 }
 
 // Map of providers to their models

@@ -1,8 +1,12 @@
-module github.com/vitoraguila/forza
+module github.com/urbanski/forza
 
 go 1.21.6
 
-require github.com/sashabaranov/go-openai v1.24.0
+require (
+	github.com/gocolly/colly v1.2.0
+	github.com/sashabaranov/go-openai v1.36.0
+	github.com/vitoraguila/forza v0.0.0-20240527003802-5bc87d1b0f93
+)
 
 require (
 	github.com/PuerkitoBio/goquery v1.9.2 // indirect
@@ -11,7 +15,6 @@ require (
 	github.com/antchfx/xmlquery v1.4.0 // indirect
 	github.com/antchfx/xpath v1.3.0 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
-	github.com/gocolly/colly v1.2.0 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/kennygrant/sanitize v1.2.4 // indirect
@@ -22,3 +25,5 @@ require (
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/protobuf v1.26.0 // indirect
 )
+
+replace github.com/vitoraguila/forza => /Users/will/go/src/github.com/urbanski/forza
