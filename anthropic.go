@@ -2,6 +2,7 @@ package forza
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -32,12 +33,12 @@ type anthropicToolDef struct {
 }
 
 type anthropicRequest struct {
-	Model       string                 `json:"model"`
-	MaxTokens   int                    `json:"max_tokens"`
-	Temperature float64                `json:"temperature,omitempty"`
-	System      string                 `json:"system,omitempty"`
-	Messages    []anthropicMessage     `json:"messages"`
-	Tools       []anthropicToolDef     `json:"tools,omitempty"`
+	Model       string             `json:"model"`
+	MaxTokens   int                `json:"max_tokens"`
+	Temperature float64            `json:"temperature,omitempty"`
+	System      string             `json:"system,omitempty"`
+	Messages    []anthropicMessage `json:"messages"`
+	Tools       []anthropicToolDef `json:"tools,omitempty"`
 }
 
 type anthropicMessage struct {
@@ -79,23 +80,12 @@ func newAnthropic(c *LLMConfig, a *Agent) LLMAgent {
 	fnExecutable := make(map[string]func(param string) (string, error))
 	builtinTools := make(map[string]bool)
 
-	systemPrompts := []agentPrompts{
-		{
-			Role:    agentRoleSystem,
-			Context: fmt.Sprintf("As a %s, %s", a.Role, a.Backstory),
-		},
-		{
-			Role:    agentRoleSystem,
-			Context: fmt.Sprintf("Your goal is %s", a.Goal),
-		},
-	}
-
 	return &anthropicProvider{
 		config:        c,
 		fnExecutable:  fnExecutable,
-		systemPrompts: systemPrompts,
+		systemPrompts: buildSystemPrompts(a),
 		builtinTools:  builtinTools,
-		httpClient:    &http.Client{},
+		httpClient:    &http.Client{Timeout: c.timeout},
 	}
 }
 
@@ -116,7 +106,11 @@ func (a *anthropicProvider) WithTools(t ...tools.Tool) {
 				"required": []string{"input"},
 			},
 		})
-		a.fnExecutable[tool.Name()] = tool.Call
+		a.fnExecutable[tool.Name()] = func(t tools.Tool) func(string) (string, error) {
+			return func(input string) (string, error) {
+				return t.Call(context.Background(), input)
+			}
+		}(tool)
 		a.builtinTools[tool.Name()] = true
 	}
 }
@@ -147,17 +141,10 @@ func (a *anthropicProvider) AddCustomTools(name string, description string, para
 	a.fnExecutable[name] = fn
 }
 
-func (a *anthropicProvider) Completion(params ...string) (string, error) {
-	if a.userPrompt == nil {
-		return "", ErrMissingPrompt
-	}
-
-	userPrompt := *a.userPrompt
-	if len(params) > 1 {
-		return "", ErrTooManyArgs
-	}
-	if len(params) == 1 {
-		userPrompt = userPrompt + "\n\nTake in consideration the following context: " + params[0]
+func (a *anthropicProvider) Completion(ctx context.Context, params ...string) (string, error) {
+	userPrompt, err := resolveUserPrompt(a.userPrompt, params)
+	if err != nil {
+		return "", err
 	}
 
 	apiKey := a.config.credentials.apiKey
@@ -191,24 +178,28 @@ func (a *anthropicProvider) Completion(params ...string) (string, error) {
 		req.Tools = a.functions
 	}
 
-	resp, err := a.doRequest(apiKey, req)
+	resp, err := a.doRequest(ctx, apiKey, req)
 	if err != nil {
 		return "", err
 	}
 
-	// Check for tool use
-	var toolUseBlocks []anthropicContentBlock
-	var textContent string
-	for _, block := range resp.Content {
-		switch block.Type {
-		case "text":
-			textContent += block.Text
-		case "tool_use":
-			toolUseBlocks = append(toolUseBlocks, block)
+	// Handle tool calls with depth limit
+	for round := 0; round < defaultMaxToolRounds; round++ {
+		var toolUseBlocks []anthropicContentBlock
+		var textContent string
+		for _, block := range resp.Content {
+			switch block.Type {
+			case "text":
+				textContent += block.Text
+			case "tool_use":
+				toolUseBlocks = append(toolUseBlocks, block)
+			}
 		}
-	}
 
-	if len(toolUseBlocks) > 0 {
+		if len(toolUseBlocks) == 0 {
+			return textContent, nil
+		}
+
 		// Add assistant response to messages
 		req.Messages = append(req.Messages, anthropicMessage{
 			Role:    "assistant",
@@ -224,17 +215,8 @@ func (a *anthropicProvider) Completion(params ...string) (string, error) {
 			}
 
 			toolInput := string(toolBlock.Input)
-
-			// For builtin tools, extract "input" field
 			if a.builtinTools[toolBlock.Name] {
-				inputMap := make(map[string]interface{})
-				if err := json.Unmarshal(toolBlock.Input, &inputMap); err == nil {
-					if v, ok := inputMap["input"]; ok {
-						if s, ok := v.(string); ok {
-							toolInput = s
-						}
-					}
-				}
+				toolInput = extractBuiltinToolInput(toolInput)
 			}
 
 			content, err := fn(toolInput)
@@ -255,29 +237,22 @@ func (a *anthropicProvider) Completion(params ...string) (string, error) {
 			Content: toolResults,
 		})
 
-		resp, err = a.doRequest(apiKey, req)
+		resp, err = a.doRequest(ctx, apiKey, req)
 		if err != nil {
 			return "", fmt.Errorf("%w: follow-up after tool call: %v", ErrCompletionFailed, err)
 		}
-
-		textContent = ""
-		for _, block := range resp.Content {
-			if block.Type == "text" {
-				textContent += block.Text
-			}
-		}
 	}
 
-	return textContent, nil
+	return "", fmt.Errorf("%w: exceeded %d rounds", ErrMaxToolRoundsExceeded, defaultMaxToolRounds)
 }
 
-func (a *anthropicProvider) doRequest(apiKey string, reqBody anthropicRequest) (*anthropicResponse, error) {
+func (a *anthropicProvider) doRequest(ctx context.Context, apiKey string, reqBody anthropicRequest) (*anthropicResponse, error) {
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("%w: failed to marshal request: %v", ErrCompletionFailed, err)
 	}
 
-	req, err := http.NewRequest("POST", anthropicAPIURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", anthropicAPIURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("%w: failed to create request: %v", ErrCompletionFailed, err)
 	}
@@ -286,28 +261,49 @@ func (a *anthropicProvider) doRequest(apiKey string, reqBody anthropicRequest) (
 	req.Header.Set("x-api-key", apiKey)
 	req.Header.Set("anthropic-version", anthropicAPIVersion)
 
-	resp, err := a.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("%w: request failed: %v", ErrCompletionFailed, err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("%w: failed to read response: %v", ErrCompletionFailed, err)
-	}
-
 	var anthropicResp anthropicResponse
-	if err := json.Unmarshal(respBody, &anthropicResp); err != nil {
-		return nil, fmt.Errorf("%w: failed to parse response: %v", ErrCompletionFailed, err)
+	doFn := func() error {
+		resp, err := a.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("%w: request failed: %v", ErrCompletionFailed, err)
+		}
+		defer resp.Body.Close()
+
+		// Check status code before parsing body
+		if resp.StatusCode != http.StatusOK {
+			respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
+			// Try to extract error from body
+			var errResp anthropicResponse
+			if json.Unmarshal(respBody, &errResp) == nil && errResp.Error != nil {
+				return &retryableError{
+					err:        fmt.Errorf("%w: API error [%s]: %s", ErrCompletionFailed, errResp.Error.Type, errResp.Error.Message),
+					statusCode: resp.StatusCode,
+				}
+			}
+			return &retryableError{
+				err:        fmt.Errorf("%w: unexpected status %d: %s", ErrCompletionFailed, resp.StatusCode, string(respBody)),
+				statusCode: resp.StatusCode,
+			}
+		}
+
+		respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
+		if err != nil {
+			return fmt.Errorf("%w: failed to read response: %v", ErrCompletionFailed, err)
+		}
+
+		if err := json.Unmarshal(respBody, &anthropicResp); err != nil {
+			return fmt.Errorf("%w: failed to parse response: %v", ErrCompletionFailed, err)
+		}
+
+		if anthropicResp.Error != nil {
+			return fmt.Errorf("%w: API error [%s]: %s", ErrCompletionFailed, anthropicResp.Error.Type, anthropicResp.Error.Message)
+		}
+
+		return nil
 	}
 
-	if anthropicResp.Error != nil {
-		return nil, fmt.Errorf("%w: API error [%s]: %s", ErrCompletionFailed, anthropicResp.Error.Type, anthropicResp.Error.Message)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%w: unexpected status %d", ErrCompletionFailed, resp.StatusCode)
+	if err := withRetry(ctx, a.config.maxRetries, doFn); err != nil {
+		return nil, err
 	}
 
 	return &anthropicResp, nil

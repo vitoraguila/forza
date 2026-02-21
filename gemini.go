@@ -2,6 +2,7 @@ package forza
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -88,23 +89,12 @@ func newGemini(c *LLMConfig, a *Agent) LLMAgent {
 	fnExecutable := make(map[string]func(param string) (string, error))
 	builtinTools := make(map[string]bool)
 
-	systemPrompts := []agentPrompts{
-		{
-			Role:    agentRoleSystem,
-			Context: fmt.Sprintf("As a %s, %s", a.Role, a.Backstory),
-		},
-		{
-			Role:    agentRoleSystem,
-			Context: fmt.Sprintf("Your goal is %s", a.Goal),
-		},
-	}
-
 	return &geminiProvider{
 		config:        c,
 		fnExecutable:  fnExecutable,
-		systemPrompts: systemPrompts,
+		systemPrompts: buildSystemPrompts(a),
 		builtinTools:  builtinTools,
-		httpClient:    &http.Client{},
+		httpClient:    &http.Client{Timeout: c.timeout},
 	}
 }
 
@@ -125,7 +115,11 @@ func (g *geminiProvider) WithTools(t ...tools.Tool) {
 				"required": []string{"input"},
 			},
 		})
-		g.fnExecutable[tool.Name()] = tool.Call
+		g.fnExecutable[tool.Name()] = func(t tools.Tool) func(string) (string, error) {
+			return func(input string) (string, error) {
+				return t.Call(context.Background(), input)
+			}
+		}(tool)
 		g.builtinTools[tool.Name()] = true
 	}
 }
@@ -156,17 +150,10 @@ func (g *geminiProvider) AddCustomTools(name string, description string, params 
 	g.fnExecutable[name] = fn
 }
 
-func (g *geminiProvider) Completion(params ...string) (string, error) {
-	if g.userPrompt == nil {
-		return "", ErrMissingPrompt
-	}
-
-	userPrompt := *g.userPrompt
-	if len(params) > 1 {
-		return "", ErrTooManyArgs
-	}
-	if len(params) == 1 {
-		userPrompt = userPrompt + "\n\nTake in consideration the following context: " + params[0]
+func (g *geminiProvider) Completion(ctx context.Context, params ...string) (string, error) {
+	userPrompt, err := resolveUserPrompt(g.userPrompt, params)
+	if err != nil {
+		return "", err
 	}
 
 	apiKey := g.config.credentials.apiKey
@@ -209,7 +196,7 @@ func (g *geminiProvider) Completion(params ...string) (string, error) {
 		}
 	}
 
-	resp, err := g.doRequest(apiKey, req)
+	resp, err := g.doRequest(ctx, apiKey, req)
 	if err != nil {
 		return "", err
 	}
@@ -218,19 +205,23 @@ func (g *geminiProvider) Completion(params ...string) (string, error) {
 		return "", fmt.Errorf("%w: no candidates returned", ErrCompletionFailed)
 	}
 
-	// Check for function calls
-	var functionCalls []geminiFunctionCall
-	var textContent string
-	for _, part := range resp.Candidates[0].Content.Parts {
-		if part.FunctionCall != nil {
-			functionCalls = append(functionCalls, *part.FunctionCall)
+	// Handle tool calls with depth limit
+	for round := 0; round < defaultMaxToolRounds; round++ {
+		var functionCalls []geminiFunctionCall
+		var textContent string
+		for _, part := range resp.Candidates[0].Content.Parts {
+			if part.FunctionCall != nil {
+				functionCalls = append(functionCalls, *part.FunctionCall)
+			}
+			if part.Text != "" {
+				textContent += part.Text
+			}
 		}
-		if part.Text != "" {
-			textContent += part.Text
-		}
-	}
 
-	if len(functionCalls) > 0 {
+		if len(functionCalls) == 0 {
+			return textContent, nil
+		}
+
 		// Add model response to contents
 		req.Contents = append(req.Contents, resp.Candidates[0].Content)
 
@@ -276,7 +267,7 @@ func (g *geminiProvider) Completion(params ...string) (string, error) {
 			Parts: responseParts,
 		})
 
-		resp, err = g.doRequest(apiKey, req)
+		resp, err = g.doRequest(ctx, apiKey, req)
 		if err != nil {
 			return "", fmt.Errorf("%w: follow-up after tool call: %v", ErrCompletionFailed, err)
 		}
@@ -284,54 +275,69 @@ func (g *geminiProvider) Completion(params ...string) (string, error) {
 		if len(resp.Candidates) == 0 {
 			return "", fmt.Errorf("%w: no candidates in follow-up response", ErrCompletionFailed)
 		}
-
-		textContent = ""
-		for _, part := range resp.Candidates[0].Content.Parts {
-			if part.Text != "" {
-				textContent += part.Text
-			}
-		}
 	}
 
-	return textContent, nil
+	return "", fmt.Errorf("%w: exceeded %d rounds", ErrMaxToolRoundsExceeded, defaultMaxToolRounds)
 }
 
-func (g *geminiProvider) doRequest(apiKey string, reqBody geminiRequest) (*geminiResponse, error) {
-	url := fmt.Sprintf("%s/%s:generateContent?key=%s", geminiAPIBaseURL, g.config.model, apiKey)
+func (g *geminiProvider) doRequest(ctx context.Context, apiKey string, reqBody geminiRequest) (*geminiResponse, error) {
+	// API key in header instead of URL for security
+	url := fmt.Sprintf("%s/%s:generateContent", geminiAPIBaseURL, g.config.model)
 
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("%w: failed to marshal request: %v", ErrCompletionFailed, err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("%w: failed to create request: %v", ErrCompletionFailed, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := g.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("%w: request failed: %v", ErrCompletionFailed, err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("%w: failed to read response: %v", ErrCompletionFailed, err)
-	}
+	req.Header.Set("x-goog-api-key", apiKey)
 
 	var geminiResp geminiResponse
-	if err := json.Unmarshal(respBody, &geminiResp); err != nil {
-		return nil, fmt.Errorf("%w: failed to parse response: %v", ErrCompletionFailed, err)
+	doFn := func() error {
+		resp, err := g.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("%w: request failed: %v", ErrCompletionFailed, err)
+		}
+		defer resp.Body.Close()
+
+		// Check status code before parsing body
+		if resp.StatusCode != http.StatusOK {
+			respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
+			var errResp geminiResponse
+			if json.Unmarshal(respBody, &errResp) == nil && errResp.Error != nil {
+				return &retryableError{
+					err:        fmt.Errorf("%w: API error [%s]: %s", ErrCompletionFailed, errResp.Error.Status, errResp.Error.Message),
+					statusCode: resp.StatusCode,
+				}
+			}
+			return &retryableError{
+				err:        fmt.Errorf("%w: unexpected status %d: %s", ErrCompletionFailed, resp.StatusCode, string(respBody)),
+				statusCode: resp.StatusCode,
+			}
+		}
+
+		respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
+		if err != nil {
+			return fmt.Errorf("%w: failed to read response: %v", ErrCompletionFailed, err)
+		}
+
+		if err := json.Unmarshal(respBody, &geminiResp); err != nil {
+			return fmt.Errorf("%w: failed to parse response: %v", ErrCompletionFailed, err)
+		}
+
+		if geminiResp.Error != nil {
+			return fmt.Errorf("%w: API error [%s]: %s", ErrCompletionFailed, geminiResp.Error.Status, geminiResp.Error.Message)
+		}
+
+		return nil
 	}
 
-	if geminiResp.Error != nil {
-		return nil, fmt.Errorf("%w: API error [%s]: %s", ErrCompletionFailed, geminiResp.Error.Status, geminiResp.Error.Message)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%w: unexpected status %d: %s", ErrCompletionFailed, resp.StatusCode, string(respBody))
+	if err := withRetry(ctx, g.config.maxRetries, doFn); err != nil {
+		return nil, err
 	}
 
 	return &geminiResp, nil

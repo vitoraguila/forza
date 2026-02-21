@@ -1,6 +1,7 @@
 package forza
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -37,7 +38,7 @@ func TestOllama_Completion_MissingPrompt(t *testing.T) {
 		WithGoal("goal")
 
 	task, _ := agent.NewLLMTask(config)
-	_, err := task.Completion()
+	_, err := task.Completion(context.Background())
 	if !errors.Is(err, ErrMissingPrompt) {
 		t.Errorf("expected ErrMissingPrompt, got %v", err)
 	}
@@ -57,7 +58,7 @@ func TestOllama_Completion_TooManyArgs(t *testing.T) {
 	task, _ := agent.NewLLMTask(config)
 	task.WithUserPrompt("hello")
 
-	_, err := task.Completion("a", "b")
+	_, err := task.Completion(context.Background(), "a", "b")
 	if !errors.Is(err, ErrTooManyArgs) {
 		t.Errorf("expected ErrTooManyArgs, got %v", err)
 	}
@@ -105,7 +106,7 @@ func TestOllama_Completion_Success(t *testing.T) {
 	task := newTestOllamaTask(server.URL)
 	task.WithUserPrompt("hello")
 
-	result, err := task.Completion()
+	result, err := task.Completion(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -165,7 +166,7 @@ func TestOllama_Completion_ToolCalling(t *testing.T) {
 		return "4", nil
 	})
 
-	result, err := task.Completion()
+	result, err := task.Completion(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -216,5 +217,59 @@ func TestOllama_AcceptsCustomModel(t *testing.T) {
 	}
 	if task == nil {
 		t.Fatal("expected non-nil task")
+	}
+}
+
+func TestOllama_ClientCaching(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := openai.ChatCompletionResponse{
+			Choices: []openai.ChatCompletionChoice{
+				{Message: openai.ChatCompletionMessage{Content: "ok"}},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	task := newTestOllamaTask(server.URL)
+	o := task.(*ollamaProvider)
+
+	// Client should be nil initially
+	if o.client != nil {
+		t.Fatal("expected nil client initially")
+	}
+
+	task.WithUserPrompt("hello")
+	_, err := task.Completion(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Client should be cached after first call
+	if o.client == nil {
+		t.Fatal("expected client to be cached after first call")
+	}
+}
+
+func TestOllama_Completion_EmptyResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := openai.ChatCompletionResponse{
+			Choices: []openai.ChatCompletionChoice{},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	task := newTestOllamaTask(server.URL)
+	task.WithUserPrompt("hello")
+
+	_, err := task.Completion(context.Background())
+	if err == nil {
+		t.Fatal("expected error for empty response")
+	}
+	if !errors.Is(err, ErrCompletionFailed) {
+		t.Errorf("expected ErrCompletionFailed, got %v", err)
 	}
 }

@@ -14,10 +14,19 @@ import (
 )
 
 const (
-	DefualtMaxDept   = 1
-	DefualtParallels = 2
-	DefualtDelay     = 3
-	DefualtAsync     = true
+	DefaultMaxDepth  = 1
+	DefaultParallels = 2
+	DefaultDelay     = 3
+	DefaultAsync     = true
+
+	// Deprecated: Use DefaultMaxDepth instead.
+	DefualtMaxDept = DefaultMaxDepth
+	// Deprecated: Use DefaultParallels instead.
+	DefualtParallels = DefaultParallels
+	// Deprecated: Use DefaultDelay instead.
+	DefualtDelay = DefaultDelay
+	// Deprecated: Use DefaultAsync instead.
+	DefualtAsync = DefaultAsync
 )
 
 var ErrScrapingFailed = errors.New("scraper could not read URL, or scraping is not allowed for provided URL")
@@ -34,10 +43,10 @@ var _ tools.Tool = Scraper{}
 
 func NewScraper(options ...Options) (*Scraper, error) {
 	scraper := &Scraper{
-		MaxDepth:  DefualtMaxDept,
-		Parallels: DefualtParallels,
-		Delay:     int64(DefualtDelay),
-		Async:     DefualtAsync,
+		MaxDepth:  DefaultMaxDepth,
+		Parallels: DefaultParallels,
+		Delay:     int64(DefaultDelay),
+		Async:     DefaultAsync,
 		Blacklist: []string{
 			"login",
 			"signup",
@@ -67,8 +76,7 @@ func (s Scraper) Description() string {
 	`
 }
 
-func (s Scraper) Call(input string) (string, error) {
-	ctx := context.Background()
+func (s Scraper) Call(ctx context.Context, input string) (string, error) {
 	_, err := url.ParseRequestURI(input)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", ErrScrapingFailed, err)
@@ -151,7 +159,6 @@ func (s Scraper) Call(input string) (string, error) {
 		// Parse the link to get the hostname
 		u, err := url.Parse(absoluteLink)
 		if err != nil {
-			// Handle the error appropriately
 			return
 		}
 
@@ -176,16 +183,12 @@ func (s Scraper) Call(input string) (string, error) {
 		scrapedLinksMutex.RLock()
 		if !scrapedLinks[u.String()] {
 			scrapedLinksMutex.RUnlock()
-			err := c.Visit(u.String())
-			if err != nil {
-				siteData.WriteString(fmt.Sprintf("\nError following link %s: %v", link, err))
-			}
+			_ = c.Visit(u.String())
 		} else {
 			scrapedLinksMutex.RUnlock()
 		}
 	})
 
-	fmt.Println("input: ", input)
 	err = c.Visit(input)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", ErrScrapingFailed, err)
@@ -193,7 +196,7 @@ func (s Scraper) Call(input string) (string, error) {
 
 	select {
 	case <-ctx.Done():
-		return "", nil
+		return "", ctx.Err()
 	default:
 		c.Wait()
 	}

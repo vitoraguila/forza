@@ -1,25 +1,39 @@
 package forza
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"sync"
-	"time"
 )
 
-// TaskChainFn is a function that takes optional context strings and returns a result or error.
-type TaskChainFn func(...string) (string, error)
+// TaskChainFn is a function that takes a context and optional context strings and returns a result or error.
+type TaskChainFn func(context.Context, ...string) (string, error)
 
-// TaskFn is a function that takes no arguments and returns a result or error.
-type TaskFn func() (string, error)
+// TaskFn is a function that takes a context and returns a result or error.
+type TaskFn func(context.Context) (string, error)
 
 // Pipeline orchestrates the execution of multiple LLM tasks.
 type Pipeline struct {
-	tasks []TaskChainFn
+	tasks  []TaskChainFn
+	logger *slog.Logger
 }
 
 // NewPipeline creates a new empty Pipeline.
 func NewPipeline() *Pipeline {
 	return &Pipeline{}
+}
+
+// WithLogger sets an optional logger for the pipeline. If nil, no logging occurs.
+func (p *Pipeline) WithLogger(l *slog.Logger) *Pipeline {
+	p.logger = l
+	return p
+}
+
+func (p *Pipeline) logDebug(msg string, args ...any) {
+	if p.logger != nil {
+		p.logger.Debug(msg, args...)
+	}
 }
 
 // AddTasks appends one or more task functions to the pipeline.
@@ -31,19 +45,19 @@ func (p *Pipeline) AddTasks(fn ...TaskChainFn) {
 // task's result as context to the next task. If any task returns an error,
 // the chain stops and the error is returned.
 func (p *Pipeline) CreateChain(tasks ...TaskChainFn) TaskFn {
-	return func() (string, error) {
+	return func(ctx context.Context) (string, error) {
 		var result string
 		for i, task := range tasks {
 			if task == nil {
 				return "", fmt.Errorf("%w: task at index %d", ErrNilTask, i)
 			}
-			fmt.Printf("Task %d of %d chains\n", i+1, len(tasks))
+			p.logDebug("chain progress", "task", i+1, "total", len(tasks))
 
 			var err error
 			if i == 0 {
-				result, err = task()
+				result, err = task(ctx)
 			} else {
-				result, err = task(result)
+				result, err = task(ctx, result)
 			}
 			if err != nil {
 				return "", fmt.Errorf("%w: task %d failed: %v", ErrChainInterrupted, i+1, err)
@@ -54,9 +68,9 @@ func (p *Pipeline) CreateChain(tasks ...TaskChainFn) TaskFn {
 }
 
 // RunConcurrently executes all added tasks concurrently and returns their results
-// in the original order. If any task fails, its error is collected and returned
-// as a combined error after all tasks complete.
-func (p *Pipeline) RunConcurrently() ([]string, error) {
+// in the original order. If any task fails or panics, its error is collected and
+// returned as a combined error after all tasks complete.
+func (p *Pipeline) RunConcurrently(ctx context.Context) ([]string, error) {
 	var wg sync.WaitGroup
 	results := make([]string, len(p.tasks))
 	errs := make([]error, len(p.tasks))
@@ -69,16 +83,26 @@ func (p *Pipeline) RunConcurrently() ([]string, error) {
 	resultsChan := make(chan taskResult, len(p.tasks))
 
 	for i, task := range p.tasks {
+		if task == nil {
+			errs[i] = fmt.Errorf("%w: task at index %d", ErrNilTask, i)
+			continue
+		}
 		wg.Add(1)
 		go func(index int, task TaskChainFn) {
 			defer wg.Done()
-			startTime := time.Now()
-			fmt.Printf("Task %d started at %s\n", index+1, startTime.Format("15:04:05.000"))
+			defer func() {
+				if r := recover(); r != nil {
+					resultsChan <- taskResult{
+						index: index,
+						err:   fmt.Errorf("task %d panicked: %v", index+1, r),
+					}
+				}
+			}()
+			p.logDebug("task started", "task", index+1)
 
-			result, err := task()
+			result, err := task(ctx)
 
-			endTime := time.Now()
-			fmt.Printf("Task %d finished at %s (Duration: %s)\n", index+1, endTime.Format("15:04:05.000"), endTime.Sub(startTime))
+			p.logDebug("task finished", "task", index+1)
 
 			resultsChan <- taskResult{index: index, result: result, err: err}
 		}(i, task)
@@ -111,15 +135,15 @@ func (p *Pipeline) RunConcurrently() ([]string, error) {
 
 // RunSequentially executes all added tasks one after another. Each task receives
 // no context arguments. If any task fails, execution stops and the error is returned.
-func (p *Pipeline) RunSequentially() ([]string, error) {
+func (p *Pipeline) RunSequentially(ctx context.Context) ([]string, error) {
 	results := make([]string, 0, len(p.tasks))
 	for i, task := range p.tasks {
 		if task == nil {
 			return results, fmt.Errorf("%w: task at index %d", ErrNilTask, i)
 		}
-		fmt.Printf("Task %d of %d\n", i+1, len(p.tasks))
+		p.logDebug("sequential progress", "task", i+1, "total", len(p.tasks))
 
-		result, err := task()
+		result, err := task(ctx)
 		if err != nil {
 			return results, fmt.Errorf("task %d failed: %w", i+1, err)
 		}

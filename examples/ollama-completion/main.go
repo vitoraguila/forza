@@ -1,13 +1,18 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/vitoraguila/forza"
 )
 
 func main() {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
 	// Ollama runs locally - no API key needed, just the endpoint.
 	// Make sure Ollama is running: ollama serve
 	// And you have pulled the model: ollama pull llama3.1
@@ -27,7 +32,7 @@ func main() {
 	}
 	task.WithUserPrompt("Write a short story about Hercules and the Hydra")
 
-	result, err := task.Completion()
+	result, err := task.Completion(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}

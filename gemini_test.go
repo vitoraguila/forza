@@ -1,6 +1,7 @@
 package forza
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -13,7 +14,8 @@ func newTestGeminiTask(serverURL string) LLMAgent {
 	config := NewLLMConfig().
 		WithProvider(ProviderGemini).
 		WithModel(GeminiModels.Gemini25Flash).
-		WithGeminiCredentials("test-key")
+		WithGeminiCredentials("test-key").
+		WithMaxRetries(1)
 
 	agent := NewAgent().
 		WithRole("Tester").
@@ -25,22 +27,10 @@ func newTestGeminiTask(serverURL string) LLMAgent {
 	// Override HTTP client to point to test server
 	g := task.(*geminiProvider)
 	g.httpClient = &http.Client{
-		Transport: &geminiRewriteTransport{baseURL: serverURL},
+		Transport: &testRewriteTransport{baseURL: serverURL},
 	}
 
 	return task
-}
-
-type geminiRewriteTransport struct {
-	baseURL string
-}
-
-func (t *geminiRewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Rewrite the Gemini API URL to our test server
-	req.URL.Scheme = "http"
-	host := strings.TrimPrefix(t.baseURL, "http://")
-	req.URL.Host = host
-	return http.DefaultTransport.RoundTrip(req)
 }
 
 func TestGemini_Completion_MissingPrompt(t *testing.T) {
@@ -55,7 +45,7 @@ func TestGemini_Completion_MissingPrompt(t *testing.T) {
 		WithGoal("goal")
 
 	task, _ := agent.NewLLMTask(config)
-	_, err := task.Completion()
+	_, err := task.Completion(context.Background())
 	if !errors.Is(err, ErrMissingPrompt) {
 		t.Errorf("expected ErrMissingPrompt, got %v", err)
 	}
@@ -74,7 +64,7 @@ func TestGemini_Completion_MissingAPIKey(t *testing.T) {
 	task, _ := agent.NewLLMTask(config)
 	task.WithUserPrompt("hello")
 
-	_, err := task.Completion()
+	_, err := task.Completion(context.Background())
 	if !errors.Is(err, ErrMissingAPIKey) {
 		t.Errorf("expected ErrMissingAPIKey, got %v", err)
 	}
@@ -94,7 +84,7 @@ func TestGemini_Completion_TooManyArgs(t *testing.T) {
 	task, _ := agent.NewLLMTask(config)
 	task.WithUserPrompt("hello")
 
-	_, err := task.Completion("a", "b")
+	_, err := task.Completion(context.Background(), "a", "b")
 	if !errors.Is(err, ErrTooManyArgs) {
 		t.Errorf("expected ErrTooManyArgs, got %v", err)
 	}
@@ -122,12 +112,41 @@ func TestGemini_Completion_Success(t *testing.T) {
 	task := newTestGeminiTask(server.URL)
 	task.WithUserPrompt("hello")
 
-	result, err := task.Completion()
+	result, err := task.Completion(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if result != "Hello from Gemini mock!" {
 		t.Errorf("expected mock response, got %q", result)
+	}
+}
+
+func TestGemini_Completion_APIKeyInHeader(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify API key is in header, not URL
+		if r.Header.Get("x-goog-api-key") != "test-key" {
+			t.Errorf("expected x-goog-api-key header to be 'test-key', got %q", r.Header.Get("x-goog-api-key"))
+		}
+		if strings.Contains(r.URL.String(), "test-key") {
+			t.Error("API key should not appear in URL")
+		}
+
+		resp := geminiResponse{
+			Candidates: []geminiCandidate{
+				{Content: geminiContent{Parts: []geminiPart{{Text: "ok"}}}},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	task := newTestGeminiTask(server.URL)
+	task.WithUserPrompt("hello")
+
+	_, err := task.Completion(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -150,7 +169,7 @@ func TestGemini_Completion_WithContext(t *testing.T) {
 	task := newTestGeminiTask(server.URL)
 	task.WithUserPrompt("test prompt")
 
-	_, err := task.Completion("previous result")
+	_, err := task.Completion(context.Background(), "previous result")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -187,7 +206,7 @@ func TestGemini_Completion_SystemInstruction(t *testing.T) {
 	task := newTestGeminiTask(server.URL)
 	task.WithUserPrompt("hello")
 
-	_, err := task.Completion()
+	_, err := task.Completion(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -246,7 +265,7 @@ func TestGemini_Completion_ToolCalling(t *testing.T) {
 		return "Sunny, 25C", nil
 	})
 
-	result, err := task.Completion()
+	result, err := task.Completion(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -269,7 +288,7 @@ func TestGemini_Completion_NoCandidates(t *testing.T) {
 	task := newTestGeminiTask(server.URL)
 	task.WithUserPrompt("hello")
 
-	_, err := task.Completion()
+	_, err := task.Completion(context.Background())
 	if err == nil {
 		t.Fatal("expected error for no candidates")
 	}
@@ -296,9 +315,28 @@ func TestGemini_Completion_APIError(t *testing.T) {
 	task := newTestGeminiTask(server.URL)
 	task.WithUserPrompt("hello")
 
-	_, err := task.Completion()
+	_, err := task.Completion(context.Background())
 	if err == nil {
 		t.Fatal("expected error for API error")
+	}
+	if !errors.Is(err, ErrCompletionFailed) {
+		t.Errorf("expected ErrCompletionFailed, got %v", err)
+	}
+}
+
+func TestGemini_Completion_MalformedJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{not valid`))
+	}))
+	defer server.Close()
+
+	task := newTestGeminiTask(server.URL)
+	task.WithUserPrompt("hello")
+
+	_, err := task.Completion(context.Background())
+	if err == nil {
+		t.Fatal("expected error for malformed JSON")
 	}
 	if !errors.Is(err, ErrCompletionFailed) {
 		t.Errorf("expected ErrCompletionFailed, got %v", err)
@@ -354,5 +392,41 @@ func TestGemini_AddCustomTools(t *testing.T) {
 	}
 	if g.functions[0].Name != "search" {
 		t.Errorf("expected name 'search', got %q", g.functions[0].Name)
+	}
+}
+
+func TestGemini_Completion_UnknownToolCall(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := geminiResponse{
+			Candidates: []geminiCandidate{
+				{
+					Content: geminiContent{
+						Role: "model",
+						Parts: []geminiPart{
+							{
+								FunctionCall: &geminiFunctionCall{
+									Name: "nonexistent_tool",
+									Args: map[string]interface{}{},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	task := newTestGeminiTask(server.URL)
+	task.WithUserPrompt("hello")
+
+	_, err := task.Completion(context.Background())
+	if err == nil {
+		t.Fatal("expected error for unknown tool")
+	}
+	if !errors.Is(err, ErrToolCallFailed) {
+		t.Errorf("expected ErrToolCallFailed, got %v", err)
 	}
 }

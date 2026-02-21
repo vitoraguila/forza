@@ -1,6 +1,7 @@
 package forza
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -10,7 +11,17 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-func newTestOpenAIAgent(serverURL string) LLMAgent {
+// mockTool implements the tools.Tool interface for testing
+type mockTool struct {
+	name string
+	desc string
+}
+
+func (m *mockTool) Name() string                                          { return m.name }
+func (m *mockTool) Description() string                                   { return m.desc }
+func (m *mockTool) Call(ctx context.Context, input string) (string, error) { return "mock result: " + input, nil }
+
+func newTestOpenAITask(serverURL string) LLMAgent {
 	config := NewLLMConfig().
 		WithProvider(ProviderOpenAi).
 		WithModel(OpenAIModels.GPT4oMini).
@@ -25,9 +36,11 @@ func newTestOpenAIAgent(serverURL string) LLMAgent {
 
 	task, _ := agent.NewLLMTask(config)
 
-	// Inject the test server URL by re-creating the OpenAI client config
-	o := task.(*openAI)
-	o.config.credentials.apiKey = "test-key"
+	// Inject test client
+	o := task.(*openaiProvider)
+	openaiConfig := openai.DefaultConfig("test-key")
+	openaiConfig.BaseURL = serverURL + "/v1"
+	o.client = openai.NewClientWithConfig(openaiConfig)
 
 	return task
 }
@@ -49,7 +62,7 @@ func TestOpenAI_Completion_MissingPrompt(t *testing.T) {
 	}
 
 	// Don't set user prompt
-	_, err = task.Completion()
+	_, err = task.Completion(context.Background())
 	if !errors.Is(err, ErrMissingPrompt) {
 		t.Errorf("expected ErrMissingPrompt, got %v", err)
 	}
@@ -69,7 +82,7 @@ func TestOpenAI_Completion_TooManyArgs(t *testing.T) {
 	task, _ := agent.NewLLMTask(config)
 	task.WithUserPrompt("hello")
 
-	_, err := task.Completion("ctx1", "ctx2")
+	_, err := task.Completion(context.Background(), "ctx1", "ctx2")
 	if !errors.Is(err, ErrTooManyArgs) {
 		t.Errorf("expected ErrTooManyArgs, got %v", err)
 	}
@@ -89,7 +102,7 @@ func TestOpenAI_Completion_MissingAPIKey(t *testing.T) {
 	task, _ := agent.NewLLMTask(config)
 	task.WithUserPrompt("hello")
 
-	_, err := task.Completion()
+	_, err := task.Completion(context.Background())
 	if !errors.Is(err, ErrMissingAPIKey) {
 		t.Errorf("expected ErrMissingAPIKey, got %v", err)
 	}
@@ -111,28 +124,10 @@ func TestOpenAI_Completion_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	config := NewLLMConfig().
-		WithProvider(ProviderOpenAi).
-		WithModel(OpenAIModels.GPT4oMini).
-		WithTemperature(0.5).
-		WithMaxTokens(100).
-		WithOpenAiCredentials("test-key")
-
-	agent := NewAgent().
-		WithRole("Tester").
-		WithBackstory("backstory").
-		WithGoal("goal")
-
-	task, _ := agent.NewLLMTask(config)
+	task := newTestOpenAITask(server.URL)
 	task.WithUserPrompt("hello")
 
-	// Override the client to use our test server
-	o := task.(*openAI)
-	openaiConfig := openai.DefaultConfig("test-key")
-	openaiConfig.BaseURL = server.URL + "/v1"
-	o.overrideClient = openai.NewClientWithConfig(openaiConfig)
-
-	result, err := task.Completion()
+	result, err := task.Completion(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -161,25 +156,10 @@ func TestOpenAI_Completion_WithContext(t *testing.T) {
 	}))
 	defer server.Close()
 
-	config := NewLLMConfig().
-		WithProvider(ProviderOpenAi).
-		WithModel(OpenAIModels.GPT4oMini).
-		WithOpenAiCredentials("test-key")
-
-	agent := NewAgent().
-		WithRole("Tester").
-		WithBackstory("backstory").
-		WithGoal("goal")
-
-	task, _ := agent.NewLLMTask(config)
+	task := newTestOpenAITask(server.URL)
 	task.WithUserPrompt("test prompt")
 
-	o := task.(*openAI)
-	openaiConfig := openai.DefaultConfig("test-key")
-	openaiConfig.BaseURL = server.URL + "/v1"
-	o.overrideClient = openai.NewClientWithConfig(openaiConfig)
-
-	_, err := task.Completion("previous context")
+	_, err := task.Completion(context.Background(), "previous context")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -239,17 +219,7 @@ func TestOpenAI_Completion_ToolCalling(t *testing.T) {
 	}))
 	defer server.Close()
 
-	config := NewLLMConfig().
-		WithProvider(ProviderOpenAi).
-		WithModel(OpenAIModels.GPT4oMini).
-		WithOpenAiCredentials("test-key")
-
-	agent := NewAgent().
-		WithRole("Weather Expert").
-		WithBackstory("weather forecaster").
-		WithGoal("provide weather info")
-
-	task, _ := agent.NewLLMTask(config)
+	task := newTestOpenAITask(server.URL)
 	task.WithUserPrompt("What's the weather in London?")
 
 	// Register a custom tool
@@ -258,12 +228,7 @@ func TestOpenAI_Completion_ToolCalling(t *testing.T) {
 		return "Sunny, 22C", nil
 	})
 
-	o := task.(*openAI)
-	openaiConfig := openai.DefaultConfig("test-key")
-	openaiConfig.BaseURL = server.URL + "/v1"
-	o.overrideClient = openai.NewClientWithConfig(openaiConfig)
-
-	result, err := task.Completion()
+	result, err := task.Completion(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -287,7 +252,7 @@ func TestOpenAI_WithTools(t *testing.T) {
 		WithGoal("goal")
 
 	task, _ := agent.NewLLMTask(config)
-	o := task.(*openAI)
+	o := task.(*openaiProvider)
 
 	// Create a mock tool
 	tool := &mockTool{name: "test_tool", desc: "a test tool"}
@@ -316,7 +281,7 @@ func TestOpenAI_AddCustomTools(t *testing.T) {
 		WithGoal("goal")
 
 	task, _ := agent.NewLLMTask(config)
-	o := task.(*openAI)
+	o := task.(*openaiProvider)
 
 	params := NewFunction(WithProperty("query", "search query", true))
 	task.AddCustomTools("search", "search the web", params, func(input string) (string, error) {
@@ -348,18 +313,109 @@ func TestOpenAI_Azure_MissingCredentials(t *testing.T) {
 	task, _ := agent.NewLLMTask(config)
 	task.WithUserPrompt("hello")
 
-	_, err := task.Completion()
+	_, err := task.Completion(context.Background())
 	if !errors.Is(err, ErrMissingAPIKey) {
 		t.Errorf("expected ErrMissingAPIKey for Azure, got %v", err)
 	}
 }
 
-// mockTool implements the tools.Tool interface for testing
-type mockTool struct {
-	name string
-	desc string
+func TestOpenAI_Completion_EmptyResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := openai.ChatCompletionResponse{
+			Choices: []openai.ChatCompletionChoice{},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	task := newTestOpenAITask(server.URL)
+	task.WithUserPrompt("hello")
+
+	_, err := task.Completion(context.Background())
+	if err == nil {
+		t.Fatal("expected error for empty response")
+	}
+	if !errors.Is(err, ErrCompletionFailed) {
+		t.Errorf("expected ErrCompletionFailed, got %v", err)
+	}
 }
 
-func (m *mockTool) Name() string                          { return m.name }
-func (m *mockTool) Description() string                   { return m.desc }
-func (m *mockTool) Call(input string) (string, error)     { return "mock result: " + input, nil }
+func TestOpenAI_Completion_UnknownToolCall(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := openai.ChatCompletionResponse{
+			Choices: []openai.ChatCompletionChoice{
+				{
+					Message: openai.ChatCompletionMessage{
+						ToolCalls: []openai.ToolCall{
+							{
+								ID:   "call_1",
+								Type: openai.ToolTypeFunction,
+								Function: openai.FunctionCall{
+									Name:      "nonexistent_tool",
+									Arguments: `{}`,
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	task := newTestOpenAITask(server.URL)
+	task.WithUserPrompt("hello")
+
+	_, err := task.Completion(context.Background())
+	if err == nil {
+		t.Fatal("expected error for unknown tool")
+	}
+	if !errors.Is(err, ErrToolCallFailed) {
+		t.Errorf("expected ErrToolCallFailed, got %v", err)
+	}
+}
+
+func TestOpenAI_Completion_ToolReturnsError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := openai.ChatCompletionResponse{
+			Choices: []openai.ChatCompletionChoice{
+				{
+					Message: openai.ChatCompletionMessage{
+						ToolCalls: []openai.ToolCall{
+							{
+								ID:   "call_1",
+								Type: openai.ToolTypeFunction,
+								Function: openai.FunctionCall{
+									Name:      "failing_tool",
+									Arguments: `{"query": "test"}`,
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	task := newTestOpenAITask(server.URL)
+	task.WithUserPrompt("hello")
+
+	params := NewFunction(WithProperty("query", "q", true))
+	task.AddCustomTools("failing_tool", "a tool that fails", params, func(input string) (string, error) {
+		return "", errors.New("tool broke")
+	})
+
+	_, err := task.Completion(context.Background())
+	if err == nil {
+		t.Fatal("expected error from tool")
+	}
+	if !errors.Is(err, ErrToolCallFailed) {
+		t.Errorf("expected ErrToolCallFailed, got %v", err)
+	}
+}

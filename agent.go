@@ -33,6 +33,7 @@ func (a *Agent) WithGoal(goal string) *Agent {
 }
 
 // providerFactory maps provider names to their constructor functions.
+// Read-only after init. Do not modify at runtime.
 var providerFactory = map[string]func(*LLMConfig, *Agent) LLMAgent{
 	ProviderOpenAi:    newOpenAI,
 	ProviderAzure:     newOpenAI,
@@ -52,6 +53,10 @@ func (a *Agent) NewLLMTask(c *LLMConfig) (LLMAgent, error) {
 	}
 	if a.Goal == "" {
 		return nil, ErrMissingGoal
+	}
+
+	if err := c.Validate(); err != nil {
+		return nil, err
 	}
 
 	ok, msg := checkModel(c.provider, c.model)

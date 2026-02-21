@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/vitoraguila/forza"
 	s "github.com/vitoraguila/forza/tools/scraper"
@@ -18,6 +20,9 @@ func getUserId(input string) (string, error) {
 }
 
 func main() {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
 	config := forza.NewLLMConfig().
 		WithProvider(forza.ProviderOpenAi).
 		WithModel(forza.OpenAIModels.GPT4oMini).
@@ -41,7 +46,7 @@ func main() {
 	tasks.AddCustomTools("get_user_id", "user will provide an userId, identify and get this userId", funcCallingParams, getUserId)
 	tasks.WithTools(scraper)
 
-	result, err := tasks.Completion()
+	result, err := tasks.Completion(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}

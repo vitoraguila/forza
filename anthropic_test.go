@@ -1,6 +1,7 @@
 package forza
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -12,7 +13,8 @@ func newTestAnthropicTask(serverURL string) LLMAgent {
 	config := NewLLMConfig().
 		WithProvider(ProviderAnthropic).
 		WithModel(AnthropicModels.Claude4Sonnet).
-		WithAnthropicCredentials("test-key")
+		WithAnthropicCredentials("test-key").
+		WithMaxRetries(1)
 
 	agent := NewAgent().
 		WithRole("Tester").
@@ -24,18 +26,18 @@ func newTestAnthropicTask(serverURL string) LLMAgent {
 	// Override the HTTP client to point to test server
 	a := task.(*anthropicProvider)
 	a.httpClient = &http.Client{
-		Transport: &rewriteTransport{baseURL: serverURL},
+		Transport: &testRewriteTransport{baseURL: serverURL},
 	}
 
 	return task
 }
 
-// rewriteTransport redirects all requests to a test server
-type rewriteTransport struct {
+// testRewriteTransport redirects all requests to a test server
+type testRewriteTransport struct {
 	baseURL string
 }
 
-func (t *rewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *testRewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	req.URL.Scheme = "http"
 	req.URL.Host = t.baseURL[len("http://"):]
 	return http.DefaultTransport.RoundTrip(req)
@@ -53,7 +55,7 @@ func TestAnthropic_Completion_MissingPrompt(t *testing.T) {
 		WithGoal("goal")
 
 	task, _ := agent.NewLLMTask(config)
-	_, err := task.Completion()
+	_, err := task.Completion(context.Background())
 	if !errors.Is(err, ErrMissingPrompt) {
 		t.Errorf("expected ErrMissingPrompt, got %v", err)
 	}
@@ -72,7 +74,7 @@ func TestAnthropic_Completion_MissingAPIKey(t *testing.T) {
 	task, _ := agent.NewLLMTask(config)
 	task.WithUserPrompt("hello")
 
-	_, err := task.Completion()
+	_, err := task.Completion(context.Background())
 	if !errors.Is(err, ErrMissingAPIKey) {
 		t.Errorf("expected ErrMissingAPIKey, got %v", err)
 	}
@@ -92,7 +94,7 @@ func TestAnthropic_Completion_TooManyArgs(t *testing.T) {
 	task, _ := agent.NewLLMTask(config)
 	task.WithUserPrompt("hello")
 
-	_, err := task.Completion("a", "b")
+	_, err := task.Completion(context.Background(), "a", "b")
 	if !errors.Is(err, ErrTooManyArgs) {
 		t.Errorf("expected ErrTooManyArgs, got %v", err)
 	}
@@ -124,7 +126,7 @@ func TestAnthropic_Completion_Success(t *testing.T) {
 	task := newTestAnthropicTask(server.URL)
 	task.WithUserPrompt("hello")
 
-	result, err := task.Completion()
+	result, err := task.Completion(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -152,7 +154,7 @@ func TestAnthropic_Completion_WithContext(t *testing.T) {
 	task := newTestAnthropicTask(server.URL)
 	task.WithUserPrompt("test prompt")
 
-	_, err := task.Completion("previous result")
+	_, err := task.Completion(context.Background(), "previous result")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -192,7 +194,7 @@ func TestAnthropic_Completion_SystemPrompt(t *testing.T) {
 	task := newTestAnthropicTask(server.URL)
 	task.WithUserPrompt("hello")
 
-	_, err := task.Completion()
+	_, err := task.Completion(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -243,7 +245,7 @@ func TestAnthropic_Completion_ToolCalling(t *testing.T) {
 		return "Sunny, 22C", nil
 	})
 
-	result, err := task.Completion()
+	result, err := task.Completion(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -272,9 +274,47 @@ func TestAnthropic_Completion_APIError(t *testing.T) {
 	task := newTestAnthropicTask(server.URL)
 	task.WithUserPrompt("hello")
 
-	_, err := task.Completion()
+	_, err := task.Completion(context.Background())
 	if err == nil {
 		t.Fatal("expected error for API error response")
+	}
+	if !errors.Is(err, ErrCompletionFailed) {
+		t.Errorf("expected ErrCompletionFailed, got %v", err)
+	}
+}
+
+func TestAnthropic_Completion_HTTP500(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error": {"type": "server_error", "message": "internal error"}}`))
+	}))
+	defer server.Close()
+
+	task := newTestAnthropicTask(server.URL)
+	task.WithUserPrompt("hello")
+
+	_, err := task.Completion(context.Background())
+	if err == nil {
+		t.Fatal("expected error for HTTP 500")
+	}
+	if !errors.Is(err, ErrCompletionFailed) {
+		t.Errorf("expected ErrCompletionFailed, got %v", err)
+	}
+}
+
+func TestAnthropic_Completion_MalformedJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{not valid json`))
+	}))
+	defer server.Close()
+
+	task := newTestAnthropicTask(server.URL)
+	task.WithUserPrompt("hello")
+
+	_, err := task.Completion(context.Background())
+	if err == nil {
+		t.Fatal("expected error for malformed JSON")
 	}
 	if !errors.Is(err, ErrCompletionFailed) {
 		t.Errorf("expected ErrCompletionFailed, got %v", err)
@@ -348,5 +388,68 @@ func TestAnthropic_AddCustomTools(t *testing.T) {
 	}
 	if _, ok := props["limit"]; !ok {
 		t.Error("expected 'limit' in properties")
+	}
+}
+
+func TestAnthropic_Completion_UnknownToolCall(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := anthropicResponse{
+			Content: []anthropicContentBlock{
+				{
+					Type:  "tool_use",
+					ID:    "toolu_1",
+					Name:  "nonexistent_tool",
+					Input: json.RawMessage(`{}`),
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	task := newTestAnthropicTask(server.URL)
+	task.WithUserPrompt("hello")
+
+	_, err := task.Completion(context.Background())
+	if err == nil {
+		t.Fatal("expected error for unknown tool")
+	}
+	if !errors.Is(err, ErrToolCallFailed) {
+		t.Errorf("expected ErrToolCallFailed, got %v", err)
+	}
+}
+
+func TestAnthropic_Completion_ToolReturnsError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := anthropicResponse{
+			Content: []anthropicContentBlock{
+				{
+					Type:  "tool_use",
+					ID:    "toolu_1",
+					Name:  "failing_tool",
+					Input: json.RawMessage(`{"q": "test"}`),
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	task := newTestAnthropicTask(server.URL)
+	task.WithUserPrompt("hello")
+
+	params := NewFunction(WithProperty("q", "query", true))
+	task.AddCustomTools("failing_tool", "a tool that fails", params, func(input string) (string, error) {
+		return "", errors.New("tool broke")
+	})
+
+	_, err := task.Completion(context.Background())
+	if err == nil {
+		t.Fatal("expected error from tool")
+	}
+	if !errors.Is(err, ErrToolCallFailed) {
+		t.Errorf("expected ErrToolCallFailed, got %v", err)
 	}
 }

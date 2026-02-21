@@ -2,7 +2,6 @@ package forza
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/sashabaranov/go-openai"
@@ -10,44 +9,33 @@ import (
 	"github.com/vitoraguila/forza/tools"
 )
 
-type openAI struct {
-	config         *LLMConfig
-	functions      []openai.FunctionDefinition
-	fnExecutable   map[string]func(param string) (string, error)
-	builtinTools   map[string]bool
-	systemPrompts  []agentPrompts
-	userPrompt     *string
-	overrideClient *openai.Client // used for testing
+type openaiProvider struct {
+	config        *LLMConfig
+	functions     []openai.FunctionDefinition
+	fnExecutable  map[string]func(param string) (string, error)
+	builtinTools  map[string]bool
+	systemPrompts []agentPrompts
+	userPrompt    *string
+	client        *openai.Client // cached client, also used for testing
 }
 
 func newOpenAI(c *LLMConfig, a *Agent) LLMAgent {
 	fnExecutable := make(map[string]func(param string) (string, error))
 	builtinTools := make(map[string]bool)
 
-	systemPrompts := []agentPrompts{
-		{
-			Role:    agentRoleSystem,
-			Context: fmt.Sprintf("As a %s, %s", a.Role, a.Backstory),
-		},
-		{
-			Role:    agentRoleSystem,
-			Context: fmt.Sprintf("Your goal is %s", a.Goal),
-		},
-	}
-
-	return &openAI{
+	return &openaiProvider{
 		config:        c,
 		fnExecutable:  fnExecutable,
-		systemPrompts: systemPrompts,
+		systemPrompts: buildSystemPrompts(a),
 		builtinTools:  builtinTools,
 	}
 }
 
-func (o *openAI) WithUserPrompt(prompt string) {
+func (o *openaiProvider) WithUserPrompt(prompt string) {
 	o.userPrompt = &prompt
 }
 
-func (o *openAI) WithTools(t ...tools.Tool) {
+func (o *openaiProvider) WithTools(t ...tools.Tool) {
 	for _, tool := range t {
 		o.functions = append(o.functions, openai.FunctionDefinition{
 			Name:        tool.Name(),
@@ -60,12 +48,16 @@ func (o *openAI) WithTools(t ...tools.Tool) {
 				"type":     "object",
 			},
 		})
-		o.fnExecutable[tool.Name()] = tool.Call
+		o.fnExecutable[tool.Name()] = func(t tools.Tool) func(string) (string, error) {
+			return func(input string) (string, error) {
+				return t.Call(context.Background(), input)
+			}
+		}(tool)
 		o.builtinTools[tool.Name()] = true
 	}
 }
 
-func (o *openAI) AddCustomTools(name string, description string, params FunctionShape, fn func(param string) (string, error)) {
+func (o *openaiProvider) AddCustomTools(name string, description string, params FunctionShape, fn func(param string) (string, error)) {
 	schema := generateOpenAISchema(params)
 
 	o.functions = append(o.functions, openai.FunctionDefinition{
@@ -76,18 +68,10 @@ func (o *openAI) AddCustomTools(name string, description string, params Function
 	o.fnExecutable[name] = fn
 }
 
-func (o *openAI) Completion(params ...string) (string, error) {
-	if o.userPrompt == nil {
-		return "", ErrMissingPrompt
-	}
-
-	userPrompt := *o.userPrompt
-
-	if len(params) > 1 {
-		return "", ErrTooManyArgs
-	}
-	if len(params) == 1 {
-		userPrompt = userPrompt + "\n\nTake in consideration the following context: " + params[0]
+func (o *openaiProvider) Completion(ctx context.Context, params ...string) (string, error) {
+	userPrompt, err := resolveUserPrompt(o.userPrompt, params)
+	if err != nil {
+		return "", err
 	}
 
 	// Build tools
@@ -112,16 +96,10 @@ func (o *openAI) Completion(params ...string) (string, error) {
 		Content: userPrompt,
 	})
 
-	// Create client
-	var client *openai.Client
-	if o.overrideClient != nil {
-		client = o.overrideClient
-	} else {
-		var err error
-		client, err = o.createClient()
-		if err != nil {
-			return "", err
-		}
+	// Get or create client
+	client, err := o.getClient()
+	if err != nil {
+		return "", err
 	}
 
 	// Build request
@@ -135,7 +113,6 @@ func (o *openAI) Completion(params ...string) (string, error) {
 		req.Tools = fn
 	}
 
-	ctx := context.Background()
 	resp, err := client.CreateChatCompletion(ctx, req)
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrCompletionFailed, err)
@@ -146,31 +123,22 @@ func (o *openAI) Completion(params ...string) (string, error) {
 
 	msg := resp.Choices[0].Message
 
-	// Handle tool calls
-	if len(msg.ToolCalls) > 0 {
+	// Handle tool calls with depth limit
+	for round := 0; len(msg.ToolCalls) > 0 && round < defaultMaxToolRounds; round++ {
 		messages = append(messages, msg)
 
 		for _, toolCall := range msg.ToolCalls {
-			fn, exists := o.fnExecutable[toolCall.Function.Name]
+			toolFn, exists := o.fnExecutable[toolCall.Function.Name]
 			if !exists {
 				return "", fmt.Errorf("%w: unknown tool %q", ErrToolCallFailed, toolCall.Function.Name)
 			}
 
 			toolInput := toolCall.Function.Arguments
-
-			// For builtin tools, extract the "input" field from the JSON arguments
 			if o.builtinTools[toolCall.Function.Name] {
-				toolInputMap := make(map[string]any)
-				if err := json.Unmarshal([]byte(toolInput), &toolInputMap); err == nil {
-					if arg, ok := toolInputMap["input"]; ok {
-						if s, ok := arg.(string); ok {
-							toolInput = s
-						}
-					}
-				}
+				toolInput = extractBuiltinToolInput(toolInput)
 			}
 
-			content, err := fn(toolInput)
+			content, err := toolFn(toolInput)
 			if err != nil {
 				return "", fmt.Errorf("%w: tool %q: %v", ErrToolCallFailed, toolCall.Function.Name, err)
 			}
@@ -191,12 +159,29 @@ func (o *openAI) Completion(params ...string) (string, error) {
 		if len(resp.Choices) == 0 {
 			return "", fmt.Errorf("%w: no choices in follow-up response", ErrCompletionFailed)
 		}
+		msg = resp.Choices[0].Message
 	}
 
-	return resp.Choices[0].Message.Content, nil
+	if len(msg.ToolCalls) > 0 {
+		return "", fmt.Errorf("%w: exceeded %d rounds", ErrMaxToolRoundsExceeded, defaultMaxToolRounds)
+	}
+
+	return msg.Content, nil
 }
 
-func (o *openAI) createClient() (*openai.Client, error) {
+func (o *openaiProvider) getClient() (*openai.Client, error) {
+	if o.client != nil {
+		return o.client, nil
+	}
+	client, err := o.createClient()
+	if err != nil {
+		return nil, err
+	}
+	o.client = client
+	return client, nil
+}
+
+func (o *openaiProvider) createClient() (*openai.Client, error) {
 	if o.config.provider == ProviderAzure {
 		apiKey := o.config.credentials.apiKey
 		endpoint := o.config.credentials.endpoint
@@ -238,3 +223,4 @@ func generateOpenAISchema(shape FunctionShape) jsonschema.Definition {
 		Required:   required,
 	}
 }
+

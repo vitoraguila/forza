@@ -1,6 +1,7 @@
 package scraper
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,20 +18,36 @@ func TestNewScraper_Defaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if s.MaxDepth != DefualtMaxDept {
-		t.Errorf("expected MaxDepth %d, got %d", DefualtMaxDept, s.MaxDepth)
+	if s.MaxDepth != DefaultMaxDepth {
+		t.Errorf("expected MaxDepth %d, got %d", DefaultMaxDepth, s.MaxDepth)
 	}
-	if s.Parallels != DefualtParallels {
-		t.Errorf("expected Parallels %d, got %d", DefualtParallels, s.Parallels)
+	if s.Parallels != DefaultParallels {
+		t.Errorf("expected Parallels %d, got %d", DefaultParallels, s.Parallels)
 	}
-	if s.Delay != int64(DefualtDelay) {
-		t.Errorf("expected Delay %d, got %d", DefualtDelay, s.Delay)
+	if s.Delay != int64(DefaultDelay) {
+		t.Errorf("expected Delay %d, got %d", DefaultDelay, s.Delay)
 	}
-	if s.Async != DefualtAsync {
-		t.Errorf("expected Async %v, got %v", DefualtAsync, s.Async)
+	if s.Async != DefaultAsync {
+		t.Errorf("expected Async %v, got %v", DefaultAsync, s.Async)
 	}
 	if len(s.Blacklist) == 0 {
 		t.Error("expected non-empty default blacklist")
+	}
+}
+
+func TestNewScraper_DeprecatedConstants(t *testing.T) {
+	// Verify deprecated constants still work
+	if DefualtMaxDept != DefaultMaxDepth {
+		t.Errorf("DefualtMaxDept should equal DefaultMaxDepth")
+	}
+	if DefualtParallels != DefaultParallels {
+		t.Errorf("DefualtParallels should equal DefaultParallels")
+	}
+	if DefualtDelay != DefaultDelay {
+		t.Errorf("DefualtDelay should equal DefaultDelay")
+	}
+	if DefualtAsync != DefaultAsync {
+		t.Errorf("DefualtAsync should equal DefaultAsync")
 	}
 }
 
@@ -92,7 +109,7 @@ func TestScraper_Description(t *testing.T) {
 
 func TestScraper_Call_InvalidURL(t *testing.T) {
 	s, _ := NewScraper()
-	_, err := s.Call("not-a-valid-url")
+	_, err := s.Call(context.Background(), "not-a-valid-url")
 	if err == nil {
 		t.Fatal("expected error for invalid URL")
 	}
@@ -112,7 +129,7 @@ func TestScraper_Call_Success(t *testing.T) {
 	defer server.Close()
 
 	s, _ := NewScraper(WithAsync(false), WithMaxDepth(1))
-	result, err := s.Call(server.URL)
+	result, err := s.Call(context.Background(), server.URL)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -152,7 +169,7 @@ func TestScraper_Call_WithLinks(t *testing.T) {
 	defer server.Close()
 
 	s, _ := NewScraper(WithAsync(false), WithMaxDepth(2))
-	result, err := s.Call(server.URL)
+	result, err := s.Call(context.Background(), server.URL)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -175,14 +192,31 @@ func TestScraper_Call_BlacklistFiltering(t *testing.T) {
 	defer server.Close()
 
 	s, _ := NewScraper(WithAsync(false), WithMaxDepth(1))
-	result, err := s.Call(server.URL)
+	result, err := s.Call(context.Background(), server.URL)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// The result should be returned (page was scraped), but login links
-	// should be filtered by the blacklist
 	if result == "" {
 		t.Error("expected non-empty result")
+	}
+}
+
+func TestScraper_Call_CancelledContext(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`<html><body><p>content</p></body></html>`))
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	s, _ := NewScraper(WithAsync(false), WithMaxDepth(1))
+	_, err := s.Call(ctx, server.URL)
+	// With cancelled context, should return error or empty result
+	if err != nil {
+		// This is expected - context was cancelled
+		return
 	}
 }

@@ -1,14 +1,19 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/vitoraguila/forza"
 )
 
 func main() {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
 	config := forza.NewLLMConfig().
 		WithProvider(forza.ProviderOpenAi).
 		WithModel(forza.OpenAIModels.GPT4oMini).
@@ -40,7 +45,7 @@ func main() {
 	f := forza.NewPipeline()
 
 	f.AddTasks(task1.Completion, task2.Completion)
-	result, err := f.RunConcurrently()
+	result, err := f.RunConcurrently(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}

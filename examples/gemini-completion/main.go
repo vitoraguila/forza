@@ -1,14 +1,19 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/vitoraguila/forza"
 )
 
 func main() {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
 	config := forza.NewLLMConfig().
 		WithProvider(forza.ProviderGemini).
 		WithModel(forza.GeminiModels.Gemini25Flash).
@@ -25,7 +30,7 @@ func main() {
 	}
 	task.WithUserPrompt("Write a story about Hercules and the Hydra")
 
-	result, err := task.Completion()
+	result, err := task.Completion(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
