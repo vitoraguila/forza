@@ -166,7 +166,7 @@ func TestCreateChain_CancelledContext(t *testing.T) {
 	chain := p.CreateChain(task)
 	_, err := chain(ctx)
 	if err == nil {
-		t.Fatal("expected error for cancelled context")
+		t.Fatal("expected error for canceled context")
 	}
 }
 
@@ -243,8 +243,8 @@ func TestRunConcurrently_ActuallyRunsConcurrently(t *testing.T) {
 	p := NewPipeline()
 	for i := 0; i < numTasks; i++ {
 		p.AddTasks(func(ctx context.Context, params ...string) (string, error) {
-			started.Done()    // Signal "I'm running"
-			<-barrier         // Wait for all to be running
+			started.Done() // Signal "I'm running"
+			<-barrier      // Wait for all to be running
 			return "done", nil
 		})
 	}
@@ -370,7 +370,7 @@ func TestRunConcurrently_CancelledContext(t *testing.T) {
 
 	_, err := p.RunConcurrently(ctx)
 	if err == nil {
-		t.Fatal("expected error from cancelled context")
+		t.Fatal("expected error from canceled context")
 	}
 }
 
@@ -446,7 +446,7 @@ func TestRunSequentially_CancelledContext(t *testing.T) {
 
 	_, err := p.RunSequentially(ctx)
 	if err == nil {
-		t.Fatal("expected error for cancelled context")
+		t.Fatal("expected error for canceled context")
 	}
 }
 

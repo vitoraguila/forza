@@ -17,9 +17,11 @@ type mockTool struct {
 	desc string
 }
 
-func (m *mockTool) Name() string                                          { return m.name }
-func (m *mockTool) Description() string                                   { return m.desc }
-func (m *mockTool) Call(ctx context.Context, input string) (string, error) { return "mock result: " + input, nil }
+func (m *mockTool) Name() string        { return m.name }
+func (m *mockTool) Description() string { return m.desc }
+func (m *mockTool) Call(ctx context.Context, input string) (string, error) {
+	return "mock result: " + input, nil
+}
 
 func newTestOpenAITask(serverURL string) LLMAgent {
 	config := NewLLMConfig().

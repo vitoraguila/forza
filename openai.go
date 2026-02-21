@@ -223,4 +223,3 @@ func generateOpenAISchema(shape FunctionShape) jsonschema.Definition {
 		Required:   required,
 	}
 }
-
