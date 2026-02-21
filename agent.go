@@ -1,58 +1,68 @@
 package forza
 
-type agent struct {
+import "fmt"
+
+// Agent represents an AI agent with a role, backstory, and goal.
+type Agent struct {
 	Role      string
 	Backstory string
 	Goal      string
 }
 
-type agentConfig struct {
-	provider string
-	model    string
+// NewAgent creates a new empty Agent.
+func NewAgent() *Agent {
+	return &Agent{}
 }
 
-func NewAgent() *agent {
-	return &agent{}
-}
-
-func NewAgentConfig(provider, model string) *agentConfig {
-	return &agentConfig{
-		provider: provider,
-		model:    model,
-	}
-}
-
-func (a *agent) WithRole(role string) *agent {
+// WithRole sets the agent's role.
+func (a *Agent) WithRole(role string) *Agent {
 	a.Role = role
-
 	return a
 }
 
-func (a *agent) WithBackstory(backstory string) *agent {
+// WithBackstory sets the agent's backstory.
+func (a *Agent) WithBackstory(backstory string) *Agent {
 	a.Backstory = backstory
-
 	return a
 }
 
-func (a *agent) WithGoal(goal string) *agent {
+// WithGoal sets the agent's goal.
+func (a *Agent) WithGoal(goal string) *Agent {
 	a.Goal = goal
-
 	return a
 }
 
-func (a *agent) NewLLMTask(c *llmConfig) llmAgent {
-	if a.Role == "" || a.Backstory == "" || a.Goal == "" {
-		panic("Agent Role(WithRole()), Backstory(WithBackstory()) and Goal(WithGoal) are required")
+// providerFactory maps provider names to their constructor functions.
+var providerFactory = map[string]func(*LLMConfig, *Agent) LLMAgent{
+	ProviderOpenAi:    newOpenAI,
+	ProviderAzure:     newOpenAI,
+	ProviderAnthropic: newAnthropic,
+	ProviderGemini:    newGemini,
+	ProviderOllama:    newOllama,
+}
+
+// NewLLMTask creates an LLMAgent for this agent using the provided configuration.
+// Returns an error if the agent is incomplete or the provider/model is invalid.
+func (a *Agent) NewLLMTask(c *LLMConfig) (LLMAgent, error) {
+	if a.Role == "" {
+		return nil, ErrMissingRole
+	}
+	if a.Backstory == "" {
+		return nil, ErrMissingBackstory
+	}
+	if a.Goal == "" {
+		return nil, ErrMissingGoal
 	}
 
-	isModelExist, msg := checkModel(c.provider, c.model)
-	if !isModelExist {
-		panic(msg)
+	ok, msg := checkModel(c.provider, c.model)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", ErrModelNotFound, msg)
 	}
-	switch c.provider {
-	case ProviderOpenAi, ProviderAzure:
-		return NewOpenAI(c, a)
-	default:
-		panic("provider does not exist")
+
+	factory, exists := providerFactory[c.provider]
+	if !exists {
+		return nil, fmt.Errorf("%w: %q", ErrProviderNotFound, c.provider)
 	}
+
+	return factory(c, a), nil
 }

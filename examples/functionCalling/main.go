@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/vitoraguila/forza"
@@ -19,7 +20,7 @@ func getUserId(input string) (string, error) {
 func main() {
 	config := forza.NewLLMConfig().
 		WithProvider(forza.ProviderOpenAi).
-		WithModel(forza.OpenAIModels.Gpt35turbo).
+		WithModel(forza.OpenAIModels.GPT4oMini).
 		WithOpenAiCredentials(os.Getenv("OPENAI_API_KEY"))
 
 	agentSpecialist := forza.NewAgent().
@@ -32,11 +33,17 @@ func main() {
 		forza.WithProperty("userId", "user id description", true),
 	)
 
-	tasks := agentSpecialist.NewLLMTask(config)
+	tasks, err := agentSpecialist.NewLLMTask(config)
+	if err != nil {
+		log.Fatal(err)
+	}
 	tasks.WithUserPrompt("what this link is about https://blog.vitoraguila.com/clwaogts30003l808xrbgumu3 ?")
 	tasks.AddCustomTools("get_user_id", "user will provide an userId, identify and get this userId", funcCallingParams, getUserId)
 	tasks.WithTools(scraper)
 
-	result := tasks.Completion()
+	result, err := tasks.Completion()
+	if err != nil {
+		log.Fatal(err)
+	}
 	fmt.Println("result TASK: ", result)
 }

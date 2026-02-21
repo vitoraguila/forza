@@ -10,9 +10,9 @@ import (
 
 func main() {
 	config := forza.NewLLMConfig().
-		WithProvider(forza.ProviderOpenAi).
-		WithModel(forza.OpenAIModels.GPT4oMini).
-		WithOpenAiCredentials(os.Getenv("OPENAI_API_KEY"))
+		WithProvider(forza.ProviderGemini).
+		WithModel(forza.GeminiModels.Gemini25Flash).
+		WithGeminiCredentials(os.Getenv("GEMINI_API_KEY"))
 
 	agentWriter := forza.NewAgent().
 		WithRole("You are famous writer").

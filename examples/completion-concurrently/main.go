@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/vitoraguila/forza"
@@ -10,7 +11,7 @@ import (
 func main() {
 	config := forza.NewLLMConfig().
 		WithProvider(forza.ProviderOpenAi).
-		WithModel(forza.OpenAIModels.Gpt35turbo).
+		WithModel(forza.OpenAIModels.GPT4oMini).
 		WithOpenAiCredentials(os.Getenv("OPENAI_API_KEY"))
 
 	marketAnalystAgent := forza.NewAgent().
@@ -18,7 +19,10 @@ func main() {
 		WithBackstory("you specialize in dissecting online business landscapes. Conduct amazing analysis of the products and competitors").
 		WithGoal("providing in-depth insights to guide marketing strategies")
 
-	task1 := marketAnalystAgent.NewLLMTask(config)
+	task1, err := marketAnalystAgent.NewLLMTask(config)
+	if err != nil {
+		log.Fatal(err)
+	}
 	task1.WithUserPrompt("Give me a full report about the market of electric cars in the US.")
 
 	contentCreatorAgent := forza.NewAgent().
@@ -26,14 +30,20 @@ func main() {
 		WithBackstory("you excel in crafting narratives that resonate with audiences on social media. Your expertise lies in turning marketing strategies into engaging stories and visual content that capture attention and inspire action").
 		WithGoal("Generate a creative social media post for a new line of eco-friendly products")
 
-	task2 := contentCreatorAgent.NewLLMTask(config)
+	task2, err := contentCreatorAgent.NewLLMTask(config)
+	if err != nil {
+		log.Fatal(err)
+	}
 	task2.WithUserPrompt("Generate a creative social media post for a new line of eco-friendly products.")
 
 	// RUNNING ALL CONCURRENTLY
 	f := forza.NewPipeline()
 
 	f.AddTasks(task1.Completion, task2.Completion)
-	result := f.RunConcurrently()
+	result, err := f.RunConcurrently()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	fmt.Println("result TASK1: ", result[0])
 	fmt.Println("-----------------")

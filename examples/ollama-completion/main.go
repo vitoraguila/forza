@@ -3,16 +3,18 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
 
 	"github.com/vitoraguila/forza"
 )
 
 func main() {
+	// Ollama runs locally - no API key needed, just the endpoint.
+	// Make sure Ollama is running: ollama serve
+	// And you have pulled the model: ollama pull llama3.1
 	config := forza.NewLLMConfig().
-		WithProvider(forza.ProviderOpenAi).
-		WithModel(forza.OpenAIModels.GPT4oMini).
-		WithOpenAiCredentials(os.Getenv("OPENAI_API_KEY"))
+		WithProvider(forza.ProviderOllama).
+		WithModel(forza.OllamaModels.Llama31).
+		WithOllamaCredentials("http://localhost:11434/v1")
 
 	agentWriter := forza.NewAgent().
 		WithRole("You are famous writer").
@@ -23,7 +25,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	task.WithUserPrompt("Write a story about Hercules and the Hydra")
+	task.WithUserPrompt("Write a short story about Hercules and the Hydra")
 
 	result, err := task.Completion()
 	if err != nil {

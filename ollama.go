@@ -10,17 +10,18 @@ import (
 	"github.com/vitoraguila/forza/tools"
 )
 
-type openAI struct {
-	config         *LLMConfig
-	functions      []openai.FunctionDefinition
-	fnExecutable   map[string]func(param string) (string, error)
-	builtinTools   map[string]bool
-	systemPrompts  []agentPrompts
-	userPrompt     *string
-	overrideClient *openai.Client // used for testing
+const defaultOllamaEndpoint = "http://localhost:11434/v1"
+
+type ollamaProvider struct {
+	config        *LLMConfig
+	functions     []openai.FunctionDefinition
+	fnExecutable  map[string]func(param string) (string, error)
+	builtinTools  map[string]bool
+	systemPrompts []agentPrompts
+	userPrompt    *string
 }
 
-func newOpenAI(c *LLMConfig, a *Agent) LLMAgent {
+func newOllama(c *LLMConfig, a *Agent) LLMAgent {
 	fnExecutable := make(map[string]func(param string) (string, error))
 	builtinTools := make(map[string]bool)
 
@@ -35,7 +36,7 @@ func newOpenAI(c *LLMConfig, a *Agent) LLMAgent {
 		},
 	}
 
-	return &openAI{
+	return &ollamaProvider{
 		config:        c,
 		fnExecutable:  fnExecutable,
 		systemPrompts: systemPrompts,
@@ -43,11 +44,11 @@ func newOpenAI(c *LLMConfig, a *Agent) LLMAgent {
 	}
 }
 
-func (o *openAI) WithUserPrompt(prompt string) {
+func (o *ollamaProvider) WithUserPrompt(prompt string) {
 	o.userPrompt = &prompt
 }
 
-func (o *openAI) WithTools(t ...tools.Tool) {
+func (o *ollamaProvider) WithTools(t ...tools.Tool) {
 	for _, tool := range t {
 		o.functions = append(o.functions, openai.FunctionDefinition{
 			Name:        tool.Name(),
@@ -65,24 +66,38 @@ func (o *openAI) WithTools(t ...tools.Tool) {
 	}
 }
 
-func (o *openAI) AddCustomTools(name string, description string, params FunctionShape, fn func(param string) (string, error)) {
-	schema := generateOpenAISchema(params)
+func (o *ollamaProvider) AddCustomTools(name string, description string, params FunctionShape, fn func(param string) (string, error)) {
+	properties := make(map[string]jsonschema.Definition)
+	var required []string
+
+	for fieldName, props := range params {
+		properties[fieldName] = jsonschema.Definition{
+			Type:        jsonschema.String,
+			Description: props.Description,
+		}
+		if props.Required {
+			required = append(required, fieldName)
+		}
+	}
 
 	o.functions = append(o.functions, openai.FunctionDefinition{
 		Name:        name,
 		Description: description,
-		Parameters:  schema,
+		Parameters: jsonschema.Definition{
+			Type:       jsonschema.Object,
+			Properties: properties,
+			Required:   required,
+		},
 	})
 	o.fnExecutable[name] = fn
 }
 
-func (o *openAI) Completion(params ...string) (string, error) {
+func (o *ollamaProvider) Completion(params ...string) (string, error) {
 	if o.userPrompt == nil {
 		return "", ErrMissingPrompt
 	}
 
 	userPrompt := *o.userPrompt
-
 	if len(params) > 1 {
 		return "", ErrTooManyArgs
 	}
@@ -112,24 +127,16 @@ func (o *openAI) Completion(params ...string) (string, error) {
 		Content: userPrompt,
 	})
 
-	// Create client
-	var client *openai.Client
-	if o.overrideClient != nil {
-		client = o.overrideClient
-	} else {
-		var err error
-		client, err = o.createClient()
-		if err != nil {
-			return "", err
-		}
+	// Create client pointing to Ollama's OpenAI-compatible endpoint
+	client, err := o.createClient()
+	if err != nil {
+		return "", err
 	}
 
-	// Build request
 	req := openai.ChatCompletionRequest{
 		Model:       o.config.model,
 		Messages:    messages,
 		Temperature: float32(o.config.temperature),
-		MaxTokens:   o.config.maxTokens,
 	}
 	if len(fn) > 0 {
 		req.Tools = fn
@@ -157,8 +164,6 @@ func (o *openAI) Completion(params ...string) (string, error) {
 			}
 
 			toolInput := toolCall.Function.Arguments
-
-			// For builtin tools, extract the "input" field from the JSON arguments
 			if o.builtinTools[toolCall.Function.Name] {
 				toolInputMap := make(map[string]any)
 				if err := json.Unmarshal([]byte(toolInput), &toolInputMap); err == nil {
@@ -196,45 +201,13 @@ func (o *openAI) Completion(params ...string) (string, error) {
 	return resp.Choices[0].Message.Content, nil
 }
 
-func (o *openAI) createClient() (*openai.Client, error) {
-	if o.config.provider == ProviderAzure {
-		apiKey := o.config.credentials.apiKey
-		endpoint := o.config.credentials.endpoint
-		if apiKey == "" {
-			return nil, fmt.Errorf("%w: Azure OpenAI API key", ErrMissingAPIKey)
-		}
-		if endpoint == "" {
-			return nil, fmt.Errorf("%w: Azure OpenAI endpoint", ErrMissingEndpoint)
-		}
-		config := openai.DefaultAzureConfig(apiKey, endpoint)
-		return openai.NewClientWithConfig(config), nil
+func (o *ollamaProvider) createClient() (*openai.Client, error) {
+	endpoint := o.config.credentials.endpoint
+	if endpoint == "" {
+		endpoint = defaultOllamaEndpoint
 	}
 
-	apiKey := o.config.credentials.apiKey
-	if apiKey == "" {
-		return nil, fmt.Errorf("%w: OpenAI API key", ErrMissingAPIKey)
-	}
-	return openai.NewClient(apiKey), nil
-}
-
-// generateOpenAISchema converts a FunctionShape to an OpenAI-compatible JSON Schema.
-func generateOpenAISchema(shape FunctionShape) jsonschema.Definition {
-	properties := make(map[string]jsonschema.Definition)
-	var required []string
-
-	for fieldName, props := range shape {
-		properties[fieldName] = jsonschema.Definition{
-			Type:        jsonschema.String,
-			Description: props.Description,
-		}
-		if props.Required {
-			required = append(required, fieldName)
-		}
-	}
-
-	return jsonschema.Definition{
-		Type:       jsonschema.Object,
-		Properties: properties,
-		Required:   required,
-	}
+	config := openai.DefaultConfig("ollama")
+	config.BaseURL = endpoint
+	return openai.NewClientWithConfig(config), nil
 }

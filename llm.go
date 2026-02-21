@@ -2,58 +2,106 @@ package forza
 
 import "github.com/vitoraguila/forza/tools"
 
-type llmAgent interface {
-	Completion(params ...string) string
-	AddCustomTools(name string, description string, params functionShape, fn func(param string) (string, error))
+// LLMAgent is the interface that all LLM provider implementations must satisfy.
+type LLMAgent interface {
+	// Completion sends the prompt to the LLM and returns the response.
+	// An optional context string can be passed (used in chains).
+	Completion(params ...string) (string, error)
+
+	// AddCustomTools registers a custom function-calling tool.
+	AddCustomTools(name string, description string, params FunctionShape, fn func(param string) (string, error))
+
+	// WithUserPrompt sets the user prompt for the next completion.
 	WithUserPrompt(prompt string)
+
+	// WithTools registers pre-built tools (e.g. scraper).
 	WithTools(tools ...tools.Tool)
 }
 
+// credentials holds provider authentication details.
 type credentials struct {
-	openAi openAiCredentials
+	apiKey   string
+	endpoint string
 }
 
-type llmConfig struct {
+// LLMConfig holds the configuration for an LLM provider.
+type LLMConfig struct {
 	provider    string
 	model       string
 	credentials credentials
 	temperature float64
+	maxTokens   int
 }
 
-func NewLLMConfig() *llmConfig {
-	return &llmConfig{
+// NewLLMConfig creates a new LLMConfig with sensible defaults.
+func NewLLMConfig() *LLMConfig {
+	return &LLMConfig{
 		temperature: 0.3,
+		maxTokens:   4096,
 	}
 }
 
-func (c *llmConfig) WithTempature(temperature float64) *llmConfig {
+// WithTemperature sets the sampling temperature (0.0 - 2.0).
+func (c *LLMConfig) WithTemperature(temperature float64) *LLMConfig {
 	c.temperature = temperature
 	return c
 }
 
-func (c *llmConfig) WithProvider(provider string) *llmConfig {
+// WithMaxTokens sets the maximum number of tokens in the response.
+func (c *LLMConfig) WithMaxTokens(maxTokens int) *LLMConfig {
+	c.maxTokens = maxTokens
+	return c
+}
+
+// WithProvider sets the LLM provider (e.g. ProviderOpenAi, ProviderAnthropic).
+func (c *LLMConfig) WithProvider(provider string) *LLMConfig {
 	c.provider = provider
 	return c
 }
 
-func (c *llmConfig) WithModel(model string) *llmConfig {
+// WithModel sets the model identifier.
+func (c *LLMConfig) WithModel(model string) *LLMConfig {
 	c.model = model
 	return c
 }
 
-func (c *llmConfig) WithOpenAiCredentials(openAiApiKey string) *llmConfig {
-	c.credentials.openAi = openAiCredentials{
-		openAiApiKey: openAiApiKey,
+// WithOpenAiCredentials sets OpenAI API credentials.
+func (c *LLMConfig) WithOpenAiCredentials(openAiApiKey string) *LLMConfig {
+	c.credentials = credentials{
+		apiKey: openAiApiKey,
 	}
-
 	return c
 }
 
-func (c *llmConfig) WithAzureOpenAiCredentials(azureOpenAiApiKey, azureOpenAiEndpoint string) *llmConfig {
-	c.credentials.openAi = openAiCredentials{
-		azureOpenAiApiKey:   azureOpenAiApiKey,
-		azureOpenAiEndpoint: azureOpenAiEndpoint,
+// WithAzureOpenAiCredentials sets Azure OpenAI credentials.
+func (c *LLMConfig) WithAzureOpenAiCredentials(azureApiKey, azureEndpoint string) *LLMConfig {
+	c.credentials = credentials{
+		apiKey:   azureApiKey,
+		endpoint: azureEndpoint,
 	}
+	return c
+}
 
+// WithAnthropicCredentials sets Anthropic API credentials.
+func (c *LLMConfig) WithAnthropicCredentials(apiKey string) *LLMConfig {
+	c.credentials = credentials{
+		apiKey: apiKey,
+	}
+	return c
+}
+
+// WithGeminiCredentials sets Google Gemini API credentials.
+func (c *LLMConfig) WithGeminiCredentials(apiKey string) *LLMConfig {
+	c.credentials = credentials{
+		apiKey: apiKey,
+	}
+	return c
+}
+
+// WithOllamaCredentials sets the Ollama endpoint (default: http://localhost:11434).
+func (c *LLMConfig) WithOllamaCredentials(endpoint string) *LLMConfig {
+	c.credentials = credentials{
+		endpoint: endpoint,
+	}
 	return c
 }

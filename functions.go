@@ -1,23 +1,27 @@
 package forza
 
-type functionProps struct {
+// FunctionProps defines properties for a function parameter.
+type FunctionProps struct {
 	Description string
 	Required    bool
 }
 
-type functionShape map[string]functionProps
+// FunctionShape maps parameter names to their properties.
+type FunctionShape map[string]FunctionProps
 
-func WithProperty(name, description string, required bool) func(functionShape) {
-	return func(shape functionShape) {
-		shape[name] = functionProps{
+// WithProperty returns an option that adds a parameter definition to a FunctionShape.
+func WithProperty(name, description string, required bool) func(FunctionShape) {
+	return func(shape FunctionShape) {
+		shape[name] = FunctionProps{
 			Description: description,
 			Required:    required,
 		}
 	}
 }
 
-func NewFunction(properties ...func(functionShape)) functionShape {
-	shape := make(functionShape)
+// NewFunction creates a new FunctionShape with the given property options.
+func NewFunction(properties ...func(FunctionShape)) FunctionShape {
+	shape := make(FunctionShape)
 	for _, prop := range properties {
 		prop(shape)
 	}

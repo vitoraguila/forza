@@ -1,4 +1,4 @@
-<a href="https://flutter.dev/">
+<a href="https://github.com/vitoraguila/forza">
   <h1 align="center">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="https://github.com/vitoraguila/forza/blob/master/assets/forza_logo_new.png?raw=true">
@@ -9,234 +9,281 @@
 
 ### Agents framework for Golang
 
-This project is in a early stage, so contributions, suggestions and feature request are pretty welcome.
+Build AI agents with multiple LLM providers using a unified, idiomatic Go API.
 
-We support: 
+**Supported providers:**
 
-* LLM agents
-* Tasks
-* Run tasks concurrently
-* Run tasks in chain
-* OpenAI
-* Azure OpenAI
-* Function calling
+| Provider | Models | Status |
+|----------|--------|--------|
+| OpenAI | GPT-4o, GPT-4o-mini, GPT-4, GPT-5, O1 | Stable |
+| Azure OpenAI | Same as OpenAI | Stable |
+| Anthropic | Claude 4 Opus, Claude 4 Sonnet, Claude 3.7/3.5 Sonnet, Claude 3 Haiku | Stable |
+| Google Gemini | Gemini 2.5 Pro, Gemini 2.5 Flash, Gemini 2.0 Flash | Stable |
+| Ollama (local) | Llama 3, Mistral, Mixtral, Phi3, Gemma2, any custom model | Stable |
+
+**Features:**
+
+- LLM agents with Role, Backstory, and Goal
+- Task pipelines: concurrent, sequential, and chained execution
+- Function calling / tool use (all providers)
+- Built-in web scraper tool
+- Proper error handling (no panics)
+- 87%+ test coverage
 
 ## Installation
 
 ```
 go get github.com/vitoraguila/forza
 ```
-Currently, `forza` requires Go version 1.18 or greater.
 
-## Environment variables
+Requires Go 1.21 or later.
+
+## Environment Variables
 
 ### OpenAI
-```.env
-OPENAI_API_KEY=
+```env
+OPENAI_API_KEY=sk-...
 ```
 
 ### Azure OpenAI
-```.env
-AZURE_OPEN_AI_API_KEY=
-AZURE_OPEN_AI_ENDPOINT=
+```env
+AZURE_OPEN_AI_API_KEY=...
+AZURE_OPEN_AI_ENDPOINT=https://your-resource.openai.azure.com/
+```
+
+### Anthropic
+```env
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+### Google Gemini
+```env
+GEMINI_API_KEY=...
+```
+
+### Ollama
+No API key needed. Just run `ollama serve` locally.
+
+## Quick Start
+
+### OpenAI
+
+```go
+package main
+
+import (
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/vitoraguila/forza"
+)
+
+func main() {
+	config := forza.NewLLMConfig().
+		WithProvider(forza.ProviderOpenAi).
+		WithModel(forza.OpenAIModels.GPT4oMini).
+		WithOpenAiCredentials(os.Getenv("OPENAI_API_KEY"))
+
+	agent := forza.NewAgent().
+		WithRole("You are famous writer").
+		WithBackstory("you know how to captivate your audience with your words").
+		WithGoal("building a compelling narrative")
+
+	task, err := agent.NewLLMTask(config)
+	if err != nil {
+		log.Fatal(err)
+	}
+	task.WithUserPrompt("Write a story about Hercules and the Hydra")
+
+	result, err := task.Completion()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(result)
+}
+```
+
+### Anthropic (Claude)
+
+```go
+config := forza.NewLLMConfig().
+	WithProvider(forza.ProviderAnthropic).
+	WithModel(forza.AnthropicModels.Claude4Sonnet).
+	WithAnthropicCredentials(os.Getenv("ANTHROPIC_API_KEY"))
+```
+
+### Google Gemini
+
+```go
+config := forza.NewLLMConfig().
+	WithProvider(forza.ProviderGemini).
+	WithModel(forza.GeminiModels.Gemini25Flash).
+	WithGeminiCredentials(os.Getenv("GEMINI_API_KEY"))
+```
+
+### Ollama (Local LLMs)
+
+```go
+config := forza.NewLLMConfig().
+	WithProvider(forza.ProviderOllama).
+	WithModel(forza.OllamaModels.Llama31).
+	WithOllamaCredentials("http://localhost:11434/v1")
 ```
 
 ## Usage
 
-### Agents using completion:
+### Running tasks concurrently
 
 ```go
-package main
+pipeline := forza.NewPipeline()
+pipeline.AddTasks(task1.Completion, task2.Completion)
 
-import (
-	"fmt"
-	"os"
-
-	"github.com/vitoraguila/forza"
-)
-
-func main() {
-	config := forza.NewLLMConfig().
-		WithProvider(forza.ProviderOpenAi).
-		WithModel(forza.OpenAIModels.Gpt35turbo).
-		WithOpenAiCredentials(os.Getenv("OPENAI_API_KEY"))
-
-	agentWriter := forza.NewAgent().
-		WithRole("You are famous writer").
-		WithBackstory("you know how to captivate your audience with your words. You have a gift for storytelling and creating magical worlds with your imagination. You are known for your enchanting tales that transport readers to far-off lands and spark their imagination.").
-		WithGoal("building a compelling narrative")
-
-	task := agentWriter.NewLLMTask(config)
-	task.WithUserPrompt("Write a story about Hercules and the Hydra")
-
-	result := task.Completion()
-	fmt.Println("result TASK: ", result)
+results, err := pipeline.RunConcurrently()
+if err != nil {
+	log.Fatal(err)
 }
-
-
+fmt.Println("Task 1:", results[0])
+fmt.Println("Task 2:", results[1])
 ```
 
-### Getting an OpenAI API Key:
+### Chaining tasks
 
-1. Visit the OpenAI website at [https://platform.openai.com/account/api-keys](https://platform.openai.com/account/api-keys).
-2. If you don't have an account, click on "Sign Up" to create one. If you do, click "Log In".
-3. Once logged in, navigate to your API key management page.
-4. Click on "Create new secret key".
-5. Enter a name for your new key, then click "Create secret key".
-6. Your new API key will be displayed. Use this key to interact with the OpenAI API.
-
-**Note:** Your API key is sensitive information. Do not share it with anyone.
-
-### Other examples:
-
-<details>
-<summary>Agents running completion concurrently</summary>
+Each task receives the previous task's output as context:
 
 ```go
-package main
+pipeline := forza.NewPipeline()
+chain := pipeline.CreateChain(researchTask.Completion, writerTask.Completion)
 
-import (
-	"fmt"
-	"os"
-
-	"github.com/vitoraguila/forza"
-)
-
-func main() {
-	config := forza.NewLLMConfig().
-		WithProvider(forza.ProviderOpenAi).
-		WithModel(forza.OpenAIModels.Gpt35turbo).
-		WithOpenAiCredentials(os.Getenv("OPENAI_API_KEY"))
-
-	marketAnalystAgent := forza.NewAgent().
-		WithRole("Lead Market Analyst at a premier digital marketing firm").
-		WithBackstory("you specialize in dissecting online business landscapes. Conduct amazing analysis of the products and competitors").
-		WithGoal("providing in-depth insights to guide marketing strategies")
-
-	task1 := marketAnalystAgent.NewLLMTask(config)
-	task1.WithUserPrompt("Give me a full report about the market of electric cars in the US.")
-
-	contentCreatorAgent := forza.NewAgent().
-		WithRole("Creative Content Creator at a top-tier digital marketing agency").
-		WithBackstory("you excel in crafting narratives that resonate with audiences on social media. Your expertise lies in turning marketing strategies into engaging stories and visual content that capture attention and inspire action").
-		WithGoal("Generate a creative social media post for a new line of eco-friendly products")
-
-	task2 := contentCreatorAgent.NewLLMTask(config)
-	task2.WithUserPrompt("Generate a creative social media post for a new line of eco-friendly products.")
-
-	// RUNNING ALL CONCURRENTLY
-	f := forza.NewPipeline()
-
-	f.AddTasks(task1.Completion, task2.Completion)
-	result := f.RunConcurrently()
-
-	fmt.Println("result TASK1: ", result[0])
-	fmt.Println("-----------------")
-	fmt.Println("result TASK2: ", result[1])
+result, err := chain()
+if err != nil {
+	log.Fatal(err)
 }
-
+fmt.Println(result)
 ```
-</details>
 
-<details>
-<summary>Agents using function calling</summary>
+### Running tasks sequentially
 
 ```go
-package main
+pipeline := forza.NewPipeline()
+pipeline.AddTasks(task1.Completion, task2.Completion, task3.Completion)
 
-import (
-	"fmt"
-	"os"
-
-	"github.com/vitoraguila/forza"
-	s "github.com/vitoraguila/forza/tools/scraper"
-)
-
-func getUserId(input string) (string, error) {
-	fmt.Println("input: ", input)
-
-	// place any logic here
-
-	return fmt.Sprintf("Answer the exact phrase 'The user id is %s'", input), nil
+results, err := pipeline.RunSequentially()
+if err != nil {
+	log.Fatal(err)
 }
-
-func main() {
-	config := forza.NewLLMConfig().
-		WithProvider(forza.ProviderOpenAi).
-		WithModel(forza.OpenAIModels.Gpt35turbo).
-		WithOpenAiCredentials(os.Getenv("OPENAI_API_KEY"))
-
-	agentSpecialist := forza.NewAgent().
-		WithRole("Expert to extract content").
-		WithBackstory("You will extract two kind of content: a userId and an URL in format http or https. Be super precisely about those formats, userId has never https/http before").
-		WithGoal("If the user provide a URL, extract the content from this URL, if the user provide a userId, extract the content from this userId.")
-
-	scraper, _ := s.NewScraper()
-	funcCallingParams := forza.NewFunction(
-		forza.WithProperty("userId", "user id description", true),
-	)
-
-	tasks := agentSpecialist.NewLLMTask(config)
-	tasks.WithUserPrompt("what this link is about https://blog.vitoraguila.com/clwaogts30003l808xrbgumu3 ?")
-	tasks.AddCustomTools("get_user_id", "user will provide an userId, identify and get this userId", funcCallingParams, getUserId)
-	tasks.WithTools(scraper)
-
-	result := tasks.Completion()
-	fmt.Println("result TASK: ", result)
-}
-
 ```
-</details>
 
-<details>
-<summary>Agents chains for tasks</summary>
+### Function calling / Tool use
 
 ```go
-package main
+// Built-in scraper tool
+scraper, _ := scraper.NewScraper()
+task.WithTools(scraper)
 
-import (
-	"fmt"
-	"os"
-
-	"github.com/vitoraguila/forza"
+// Custom tools
+params := forza.NewFunction(
+	forza.WithProperty("city", "city name", true),
 )
+task.AddCustomTools("get_weather", "get weather for a city", params, func(input string) (string, error) {
+	// your logic here
+	return "Sunny, 22C", nil
+})
+```
 
-func main() {
-	config := forza.NewLLMConfig().
-		WithProvider(forza.ProviderOpenAi).
-		WithModel(forza.OpenAIModels.Gpt35turbo).
-		WithOpenAiCredentials(os.Getenv("OPENAI_API_KEY"))
+### Configuration options
 
-	marketAnalystAgent := forza.NewAgent()
-	marketAnalystAgent.
-		WithRole("Lead Market Analyst at a premier digital marketing firm").
-		WithBackstory("you specialize in dissecting online business landscapes. Conduct amazing analysis of the products and competitors").
-		WithGoal("providing in-depth insights to guide marketing strategies")
+```go
+config := forza.NewLLMConfig().
+	WithProvider(forza.ProviderOpenAi).
+	WithModel(forza.OpenAIModels.GPT4oMini).
+	WithTemperature(0.7).      // 0.0 - 2.0 (default: 0.3)
+	WithMaxTokens(2048).       // max response tokens (default: 4096)
+	WithOpenAiCredentials(key)
+```
 
-	task1 := marketAnalystAgent.NewLLMTask(config)
-	task1.WithUserPrompt("Give me a full report about the market of electric cars in the US.")
+## Available Models
 
-	contentCreatorAgent := forza.NewAgent()
-	contentCreatorAgent.
-		WithRole("Creative Content Creator at a top-tier digital marketing agency").
-		WithBackstory("you excel in crafting narratives that resonate with audiences on social media. Your expertise lies in turning marketing strategies into engaging stories and visual content that capture attention and inspire action").
-		WithGoal("Generate a creative social media post for a new line of eco-friendly products")
+### OpenAI
+| Constant | Model |
+|----------|-------|
+| `OpenAIModels.GPT4oMini` | gpt-4o-mini (recommended) |
+| `OpenAIModels.GPT4o` | gpt-4o |
+| `OpenAIModels.GPT4` | gpt-4 |
+| `OpenAIModels.GPT4Turbo` | gpt-4-turbo |
+| `OpenAIModels.GPT5` | gpt-5 |
+| `OpenAIModels.O1` | o1 |
+| `OpenAIModels.O1Mini` | o1-mini |
+| `OpenAIModels.GPT35Turbo` | gpt-3.5-turbo (deprecated) |
 
-	task2 := contentCreatorAgent.NewLLMTask(config)
-	task2.WithUserPrompt("Generate a creative social media post for a new line of eco-friendly products.")
+### Anthropic
+| Constant | Model |
+|----------|-------|
+| `AnthropicModels.Claude4Opus` | claude-opus-4-20250514 |
+| `AnthropicModels.Claude4Sonnet` | claude-sonnet-4-20250514 |
+| `AnthropicModels.Claude37Sonnet` | claude-3-7-sonnet-latest |
+| `AnthropicModels.Claude35Sonnet` | claude-3-5-sonnet-latest |
+| `AnthropicModels.Claude3Haiku` | claude-3-haiku-20240307 |
 
-	f := forza.NewPipeline()
-	chain := f.CreateChain(task1.Completion, task2.Completion)
+### Google Gemini
+| Constant | Model |
+|----------|-------|
+| `GeminiModels.Gemini25Pro` | gemini-2.5-pro |
+| `GeminiModels.Gemini25Flash` | gemini-2.5-flash |
+| `GeminiModels.Gemini20Flash` | gemini-2.0-flash |
 
-	fmt.Println("Chain result: ", chain())
-}
+### Ollama
+| Constant | Model |
+|----------|-------|
+| `OllamaModels.Llama31` | llama3.1 |
+| `OllamaModels.Llama3` | llama3 |
+| `OllamaModels.Mistral` | mistral |
+| `OllamaModels.Mixtral` | mixtral |
+| `OllamaModels.Phi3` | phi3 |
+| `OllamaModels.Gemma2` | gemma2 |
+
+Ollama also accepts any custom model string.
+
+## Architecture
 
 ```
-</details>
+forza/
+├── agent.go        # Agent + provider factory
+├── llm.go          # LLMAgent interface + LLMConfig
+├── common.go       # Provider constants + model registry
+├── errors.go       # Error types
+├── functions.go    # Function calling parameter builder
+├── forza.go        # Pipeline: concurrent, sequential, chain
+├── openai.go       # OpenAI / Azure provider
+├── anthropic.go    # Anthropic (Claude) provider
+├── gemini.go       # Google Gemini provider
+├── ollama.go       # Ollama (local LLMs) provider
+├── tools/
+│   ├── tool.go     # Tool interface
+│   └── scraper/    # Web scraper tool
+└── examples/       # Usage examples per provider
+```
 
-### TODO:
+## Development
 
-- [ ] Add tests
-- [ ] Add support for Gemini
-- [ ] Add support for Llama
-- [x] Implement chain of actions
+```bash
+make test       # Run tests
+make cover      # Run tests with coverage
+make lint       # Run golangci-lint
+make build      # Build all packages
+make check      # Run vet + lint + test
+```
+
+## Contributing
+
+Contributions, suggestions, and feature requests are welcome.
+
+1. Fork the repository
+2. Create a feature branch
+3. Write tests for new functionality
+4. Ensure `make check` passes
+5. Submit a pull request
+
+## License
+
+[MIT](LICENSE)
